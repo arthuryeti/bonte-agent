@@ -1,0 +1,5624 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "version": "v1",
+    "title": "External Api Version"
+  },
+  "host": "crmapi.proppydev.com",
+  "schemes": [
+    "https"
+  ],
+  "paths": {
+    "/api/Agency/GetAgencies": {
+      "post": {
+        "tags": [
+          "Agency"
+        ],
+        "summary": "Get Agencies",
+        "operationId": "Agency_GetAgencies",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "rq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyListExternalRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyListRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/CasafariGo/GetUrl": {
+      "post": {
+        "tags": [
+          "CasafariGo"
+        ],
+        "summary": "Get CasafariGo Url",
+        "operationId": "CasafariGo_GetUrl",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "casafariGoRq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoUrlRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoUrlRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/CasafariGo/CreateUser": {
+      "post": {
+        "tags": [
+          "CasafariGo"
+        ],
+        "summary": "Create CasafariGo User",
+        "operationId": "CasafariGo_CreateUser",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "casafariGoRq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoEntityRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoEntityRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/CasafariGo/DeleteUser": {
+      "post": {
+        "tags": [
+          "CasafariGo"
+        ],
+        "summary": "Delete CasafariGo User",
+        "operationId": "CasafariGo_DeleteUser",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "casafariGoRq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoEntityRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.GenericRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/CodeTable": {
+      "get": {
+        "tags": [
+          "CodeTable"
+        ],
+        "summary": "Retrieves a list of unique identifiers (IDs) for clients based on the provided request parameters.",
+        "description": "The \"Get\" method handles HTTP GET requests to obtain a list of client IDs. It accepts a request model\r\n{rq} to define criteria for the code table query. The method returns a model containing\r\nthe list of client IDs based on the provided criteria.",
+        "operationId": "CodeTable_Get",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "rq.includeBusinessTypes",
+            "in": "query",
+            "description": "Gets or sets a value indicating whether to include business types in the query.",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "rq.includePropertyTypes",
+            "in": "query",
+            "description": "Gets or sets a value indicating whether to include property types in the query.",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "rq.lang",
+            "in": "query",
+            "description": "sets a value for the language of results.",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "rq.includeZones",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "rq.correlationId",
+            "in": "query",
+            "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "rq.echoToken",
+            "in": "query",
+            "description": "A reference for additional message identification, assigned by the requesting host system.",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "rq.primaryLangId",
+            "in": "query",
+            "description": "The primary language preference for the message encoded as ISO 639-3.",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "rq.retransmissionIndicator",
+            "in": "query",
+            "description": "When true, indicates the message is being re-sent after a failure.",
+            "required": false,
+            "type": "boolean"
+          },
+          {
+            "name": "rq.timeStamp",
+            "in": "query",
+            "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "rq.version",
+            "in": "query",
+            "description": "The message version indicated by a decimal value.",
+            "required": false,
+            "type": "number",
+            "format": "double"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CodeTables.CodeTableRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Entity/GetAgents": {
+      "post": {
+        "tags": [
+          "Entity"
+        ],
+        "summary": "Get Agents",
+        "operationId": "Entity_GetAgents",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "rq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.SystemUserRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityListRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Entity/GetOwnerlinks": {
+      "post": {
+        "tags": [
+          "Entity"
+        ],
+        "summary": "Get Ownerlinks",
+        "operationId": "Entity_GetOwnerlinks",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "rq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityOwnerlinksRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityOwnerlinksRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Leads/Insert": {
+      "post": {
+        "tags": [
+          "Leads"
+        ],
+        "summary": "",
+        "operationId": "Leads_Insert",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "insertRq",
+            "in": "body",
+            "description": "",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadtRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Leads/List": {
+      "post": {
+        "tags": [
+          "Leads"
+        ],
+        "summary": "Get Sales/Listings",
+        "operationId": "Leads_List",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "leadRq",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.GetLeadRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Property/SendProperty": {
+      "post": {
+        "tags": [
+          "Property"
+        ],
+        "summary": "Insert/Update Property",
+        "operationId": "Property_SendProperty",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "propertyRq",
+            "in": "body",
+            "description": "Property request object",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Property/DeleteProperty": {
+      "post": {
+        "tags": [
+          "Property"
+        ],
+        "summary": "Delete Property",
+        "operationId": "Property_DeleteProperty",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "propertyRq",
+            "in": "body",
+            "description": "Property request object",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Property/ListProperties": {
+      "post": {
+        "tags": [
+          "Property"
+        ],
+        "summary": "Get Property List",
+        "operationId": "Property_ListProperties",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "searchRq",
+            "in": "body",
+            "description": "",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.FilterRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyListRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Property/Location": {
+      "post": {
+        "tags": [
+          "Property"
+        ],
+        "summary": "Get Locations",
+        "operationId": "Property_Location",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "searchRq",
+            "in": "body",
+            "description": "",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.LocationRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.LocationRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Property/InnerLocations": {
+      "post": {
+        "tags": [
+          "Property"
+        ],
+        "summary": "Get InnerLocations",
+        "operationId": "Property_InnerLocations",
+        "consumes": [],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocationRs"
+            }
+          }
+        }
+      }
+    },
+    "/api/Property/Hit": {
+      "post": {
+        "tags": [
+          "Property"
+        ],
+        "summary": "Insert Property Visit",
+        "operationId": "Property_Hit",
+        "consumes": [
+          "application/json",
+          "text/json"
+        ],
+        "produces": [
+          "application/json",
+          "text/json"
+        ],
+        "parameters": [
+          {
+            "name": "hitRq",
+            "in": "body",
+            "description": "Request containing information about the hit",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.HitRq"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.HitRs"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "Casafari.Crm.Api.Dtos.Agency.AgencyListExternalRq": {
+      "type": "object",
+      "properties": {
+        "Lang": {
+          "enum": [
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "it",
+            "de",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "pl",
+            "zh",
+            "ru",
+            "fi"
+          ],
+          "type": "string"
+        },
+        "AgencySearchFilters": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencySearchFilters"
+        },
+        "AgencyListSorts": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyListSorts"
+        },
+        "Includes": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyIncludes"
+        },
+        "PagingRq": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.PagingRq"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencySearchFilters": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        },
+        "CountryId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "RegionId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "LocalityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "LocationIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "AgenciesIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "IncludeChildAgencies": {
+          "type": "boolean"
+        },
+        "OnlyChildAgencies": {
+          "type": "boolean"
+        },
+        "AgencyHierarchyId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ParentIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "ShowOnlyVisibleOnWebsite": {
+          "type": "boolean"
+        },
+        "ExtraField1": {
+          "type": "boolean"
+        },
+        "IsShop": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyListSorts": {
+      "type": "object",
+      "properties": {
+        "SortBy": {
+          "enum": [
+            "NameAsc",
+            "NameDesc"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyIncludes": {
+      "type": "object",
+      "properties": {
+        "IncludeLocales": {
+          "type": "boolean"
+        },
+        "IncludePhotos": {
+          "type": "boolean"
+        },
+        "IncludeBrokers": {
+          "type": "boolean"
+        },
+        "IncludeHierarchies": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.PagingRq": {
+      "type": "object",
+      "properties": {
+        "Current": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ResultsPerPage": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyListRs": {
+      "type": "object",
+      "properties": {
+        "Agencies": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyDto"
+          }
+        },
+        "LocationsLookups": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Location.LocationsLookups"
+        },
+        "TotalRecords": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PagingRs": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.PagingRs"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyDto": {
+      "type": "object",
+      "properties": {
+        "AgencyID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgencyName": {
+          "type": "string"
+        },
+        "User": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.User.UserDto"
+        },
+        "CompanyName": {
+          "type": "string"
+        },
+        "AgencyMobilePhone": {
+          "type": "string"
+        },
+        "AMI": {
+          "type": "string"
+        },
+        "InvoiceXpressAPIKey": {
+          "type": "string"
+        },
+        "InvoiceXpressAPIPath": {
+          "type": "string"
+        },
+        "AgencyAddress": {
+          "type": "string"
+        },
+        "AgencyPhone": {
+          "type": "string"
+        },
+        "AgencyEmail": {
+          "type": "string"
+        },
+        "UserID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CreateDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "LogoPath": {
+          "type": "string"
+        },
+        "GMapLot": {
+          "type": "string"
+        },
+        "GMapLat": {
+          "type": "string"
+        },
+        "OfficeHours": {
+          "type": "string"
+        },
+        "Location": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Location.LocationDto"
+        },
+        "Agency_Locales": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyLocaleDto"
+          }
+        },
+        "Agency_Photos": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyPhotoDto"
+          }
+        },
+        "Entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityDto"
+          }
+        },
+        "ParentID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ZipCode": {
+          "type": "string"
+        },
+        "CreditCategory": {
+          "type": "string"
+        },
+        "CreditTypes": {
+          "type": "string"
+        },
+        "ExclusivityRegime": {
+          "type": "boolean"
+        },
+        "PartnerBanks": {
+          "type": "string"
+        },
+        "AuthorizedServices": {
+          "type": "string"
+        },
+        "ConsultancyServices": {
+          "type": "boolean"
+        },
+        "ReceptionRestriction": {
+          "type": "string"
+        },
+        "SupervisingEntity": {
+          "type": "string"
+        },
+        "ConflictCenters": {
+          "type": "string"
+        },
+        "MortgageCreditSrcPolicyNumber": {
+          "type": "string"
+        },
+        "MortgageCreditSrcPolicyDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ConsumerCreditSrcPolicyNumber": {
+          "type": "string"
+        },
+        "ConsumerCreditSrcPolicyDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "RegVerification": {
+          "type": "string"
+        },
+        "CreditMediatorLicense": {
+          "type": "string"
+        },
+        "PartnerBanksNames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.PartnerBanksName"
+          }
+        },
+        "CreditTypesNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "AuthorizedServicesNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "CanVisibleOnWebsite": {
+          "type": "boolean"
+        },
+        "MortgageCreditSrcInsuranseCompany": {
+          "type": "string"
+        },
+        "MortgageCreditSrcPolicyInitDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ConsumerCreditSrcInsuranseCompany": {
+          "type": "string"
+        },
+        "ConsumerCreditSrcPolicyInitDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "IndependentCreditMediatorId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CreditMediatorObject": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CreditMediator.CreditMediatorsDto"
+        },
+        "AgencyTaxPayerNumber": {
+          "type": "string"
+        },
+        "CreditMediatorName": {
+          "type": "string"
+        },
+        "SocialCapital": {
+          "format": "double",
+          "type": "number"
+        },
+        "ManagingPartner": {
+          "type": "string"
+        },
+        "InsuranceCompany": {
+          "type": "string"
+        },
+        "InsuranceValue": {
+          "format": "double",
+          "type": "number"
+        },
+        "Courtname": {
+          "type": "string"
+        },
+        "InsuranceContractID": {
+          "type": "string"
+        },
+        "LinkedInURL": {
+          "type": "string"
+        },
+        "FacebookURL": {
+          "type": "string"
+        },
+        "TwitterURL": {
+          "type": "string"
+        },
+        "InstagramURL": {
+          "type": "string"
+        },
+        "YoutubeURL": {
+          "type": "string"
+        },
+        "TaxPayerNumber": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Location.LocationsLookups": {
+      "type": "object",
+      "properties": {
+        "Regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+          }
+        },
+        "Countries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+          }
+        },
+        "Localities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+          }
+        },
+        "Cities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+          }
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.PagingRs": {
+      "type": "object",
+      "properties": {
+        "NextPage": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PreviousPage": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "TotalPages": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CurrentPage": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ResultsPerPage": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PagingItems": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "readOnly": true
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Success": {
+      "type": "object",
+      "properties": {}
+    },
+    "Casafari.Crm.Api.Dtos.Error": {
+      "type": "object",
+      "properties": {
+        "Code": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ShortText": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Warning": {
+      "type": "object",
+      "properties": {
+        "Code": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ShortText": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.User.UserDto": {
+      "type": "object",
+      "properties": {
+        "ProppyUserId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "UserID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Active": {
+          "type": "boolean"
+        },
+        "Fullname": {
+          "type": "string"
+        },
+        "CompanyName": {
+          "type": "string",
+          "readOnly": true
+        },
+        "Emailaddress": {
+          "type": "string"
+        },
+        "Phone1": {
+          "type": "string"
+        },
+        "PhoneList": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "readOnly": true
+        },
+        "Phone2": {
+          "type": "string"
+        },
+        "Phone3": {
+          "type": "string"
+        },
+        "Fax": {
+          "type": "string"
+        },
+        "Address": {
+          "type": "string"
+        },
+        "Webpage": {
+          "type": "string"
+        },
+        "CreateDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "LastLogin": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "AuthorizedICNumber": {
+          "type": "string"
+        },
+        "WebsiteLeadDestination": {
+          "type": "string"
+        },
+        "SocialDesignation": {
+          "type": "string"
+        },
+        "TaxPayerNumber": {
+          "type": "string"
+        },
+        "PropertyColors": {
+          "type": "string"
+        },
+        "GAnalyticsCode": {
+          "type": "string"
+        },
+        "MainDomainName": {
+          "type": "string"
+        },
+        "ColorCode": {
+          "type": "string"
+        },
+        "IgnoreIPS": {
+          "type": "string"
+        },
+        "YoutubeRefreshToken": {
+          "type": "string"
+        },
+        "UsesRentals": {
+          "type": "boolean"
+        },
+        "ForeignCurrencyRate": {
+          "format": "double",
+          "type": "number"
+        },
+        "PropertyAutoReference": {
+          "type": "boolean"
+        },
+        "PropertyPriceVisible": {
+          "type": "boolean"
+        },
+        "YoutubeURL": {
+          "type": "string"
+        },
+        "LogoURL": {
+          "type": "string"
+        },
+        "FacebookURL": {
+          "type": "string"
+        },
+        "LinkedInURL": {
+          "type": "string"
+        },
+        "InstagramURL": {
+          "type": "string"
+        },
+        "TwitterURL": {
+          "type": "string"
+        },
+        "AMILicenceNumber": {
+          "type": "string"
+        },
+        "CreditMediatorLicense": {
+          "type": "string"
+        },
+        "IsProppy": {
+          "type": "boolean"
+        },
+        "GMapsLatitude": {
+          "type": "string"
+        },
+        "GMapsLongitude": {
+          "type": "string"
+        },
+        "UsesRealEstate": {
+          "type": "boolean"
+        },
+        "UsesPropertyButtons": {
+          "type": "boolean"
+        },
+        "ZipCode": {
+          "type": "string"
+        },
+        "UserPortals": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.User.UserPortalDto"
+          }
+        },
+        "EnableLocationTextInWebsite": {
+          "type": "boolean"
+        },
+        "EnableLocationTextExportToPortals": {
+          "type": "boolean"
+        },
+        "CreditCategory": {
+          "type": "string"
+        },
+        "CreditTypes": {
+          "type": "string"
+        },
+        "ExclusivityRegime": {
+          "type": "boolean"
+        },
+        "PartnerBanks": {
+          "type": "string"
+        },
+        "AuthorizedServices": {
+          "type": "string"
+        },
+        "ConsultancyServices": {
+          "type": "boolean"
+        },
+        "ReceptionRestriction": {
+          "type": "string"
+        },
+        "SupervisingEntity": {
+          "type": "string"
+        },
+        "ConflictCenters": {
+          "type": "string"
+        },
+        "MortgageCreditSrcPolicyNumber": {
+          "type": "string"
+        },
+        "MortgageCreditSrcPolicyDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ConsumerCreditSrcPolicyNumber": {
+          "type": "string"
+        },
+        "ConsumerCreditSrcPolicyDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "RegVerification": {
+          "type": "string"
+        },
+        "PartnerBanksNames": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "MortgageCreditSrcIncuranseCompany": {
+          "type": "string"
+        },
+        "MortgageCreditSrcPolicyInitDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "ConsumerCreditSrcIncuranseCompany": {
+          "type": "string"
+        },
+        "ConsumerCreditSrcPolicyInitDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "IndependentCreditMediatorId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CreditMediatorId": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Location.LocationDto": {
+      "type": "object",
+      "properties": {
+        "Country": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+        },
+        "Region": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+        },
+        "City": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+        },
+        "Locality": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.IdValueModel"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyLocaleDto": {
+      "type": "object",
+      "properties": {
+        "AgencyID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CultureID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgencyDescription": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyPhotoDto": {
+      "type": "object",
+      "properties": {
+        "AgencyPhotoID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgencyID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Path": {
+          "type": "string"
+        },
+        "Sortorder": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "WebsiteVisible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityDto": {
+      "type": "object",
+      "properties": {
+        "LinkedInUrl": {
+          "type": "string"
+        },
+        "InstagramUrl": {
+          "type": "string"
+        },
+        "TwitterUrl": {
+          "type": "string"
+        },
+        "FacebookUrl": {
+          "type": "string"
+        },
+        "VisibleOnWebsite": {
+          "type": "boolean"
+        },
+        "VisibleOnLuxuryWebsite": {
+          "type": "boolean"
+        },
+        "OptinDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "Optin": {
+          "type": "boolean"
+        },
+        "UTCOffset": {
+          "type": "string"
+        },
+        "Timezone": {
+          "type": "string"
+        },
+        "AgencyID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ParentAgencyID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "GC_RefreshToken": {
+          "type": "string"
+        },
+        "LastAutoMailingDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "WishPropertyDtoNumberRoomsTo": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "WishPropertyDtoNumberRoomsFrom": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "WishPropertyDtoHouseAreaTo": {
+          "format": "double",
+          "type": "number"
+        },
+        "WishPropertyDtoHouseAreaFrom": {
+          "format": "double",
+          "type": "number"
+        },
+        "WishPropertyDtoLandAreaTo": {
+          "format": "double",
+          "type": "number"
+        },
+        "WishPropertyDtoLandAreaFrom": {
+          "format": "double",
+          "type": "number"
+        },
+        "WishPropertyDtoPriceTo": {
+          "format": "double",
+          "type": "number"
+        },
+        "TelemarketerID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "JobType": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Entity2": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityDto"
+        },
+        "Entity1": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityDto"
+        },
+        "Entities_Locale": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntitiesLocaleDto"
+          }
+        },
+        "Entities_Locales": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntitiesLocaleDto"
+          }
+        },
+        "EntitiesLocale": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntitiesLocaleDto",
+          "description": "This object is the representative object of first element in locales list",
+          "readOnly": true
+        },
+        "EntityFiles": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityFileDto"
+          }
+        },
+        "EntityFile": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityFileDto",
+          "description": "This object is the representative object of first element in locales list",
+          "readOnly": true
+        },
+        "ExtraPhone2Desc": {
+          "type": "string"
+        },
+        "ExtraPhone1Desc": {
+          "type": "string"
+        },
+        "ExtraPhone2": {
+          "type": "string"
+        },
+        "ExtraPhone1": {
+          "type": "string"
+        },
+        "WishPropertyDtoConditions": {
+          "type": "string"
+        },
+        "WishPropertyDtoTypes": {
+          "type": "string"
+        },
+        "WishPropertyDtoPrice": {
+          "format": "double",
+          "type": "number"
+        },
+        "ReceivesSMS": {
+          "type": "boolean"
+        },
+        "ZipCode": {
+          "type": "string"
+        },
+        "Webpage": {
+          "type": "string"
+        },
+        "IncludeInMailings": {
+          "type": "boolean"
+        },
+        "Active": {
+          "type": "boolean"
+        },
+        "LastChangeDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "CreateDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "Address": {
+          "type": "string"
+        },
+        "UserID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Notes": {
+          "type": "string"
+        },
+        "Faxnumber": {
+          "type": "string"
+        },
+        "Cellphone": {
+          "type": "string"
+        },
+        "PhoneNumber": {
+          "type": "string"
+        },
+        "EmailAddress": {
+          "type": "string"
+        },
+        "EntityName": {
+          "type": "string"
+        },
+        "EntityType": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "EntityID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "WishPropertyDtoTypologies": {
+          "type": "string"
+        },
+        "WishPropertyDtoCities": {
+          "type": "string"
+        },
+        "WishPropertyDtoDetailOptions": {
+          "type": "string"
+        },
+        "WishPropertyDtoRegions": {
+          "type": "string"
+        },
+        "ColorCode": {
+          "type": "string"
+        },
+        "LawyerID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CultureID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Filename": {
+          "type": "string"
+        },
+        "AlreadyBought": {
+          "type": "boolean"
+        },
+        "ColorLevel": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ActivityArea": {
+          "type": "string"
+        },
+        "CompanyName": {
+          "type": "string"
+        },
+        "JobTitle": {
+          "type": "string"
+        },
+        "EntityTitle": {
+          "type": "string"
+        },
+        "EntityAccessLevelID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "NIB": {
+          "type": "string"
+        },
+        "BirthDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "VisitNotes": {
+          "type": "string"
+        },
+        "VisitDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "CustomerOriginID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "WishPropertyDtoZones": {
+          "type": "string"
+        },
+        "TaxPayerNumber": {
+          "type": "string"
+        },
+        "ExternalCode": {
+          "type": "string"
+        },
+        "BrokerID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "WishPropertyDtoLocalities": {
+          "type": "string"
+        },
+        "NewFromWebsite": {
+          "type": "boolean"
+        },
+        "CountryISO": {
+          "type": "string"
+        },
+        "EntityDefaultPhoto": {
+          "type": "string"
+        },
+        "Agency": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Agency.AgencyDtoShort"
+        },
+        "SpokenLanguages": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.PartnerBanksName": {
+      "type": "object",
+      "properties": {
+        "Id": {
+          "type": "string"
+        },
+        "Name": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CreditMediator.CreditMediatorsDto": {
+      "type": "object",
+      "properties": {
+        "CreditMediatorId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "UserId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CreditMediatorName": {
+          "type": "string"
+        },
+        "CreditCompanyName": {
+          "type": "string"
+        },
+        "AMI": {
+          "type": "string"
+        },
+        "TaxPayerNumber": {
+          "type": "string"
+        },
+        "CreditMediatorLicense": {
+          "type": "string"
+        },
+        "SocialCapital": {
+          "format": "double",
+          "type": "number"
+        },
+        "ManagingPartner": {
+          "type": "string"
+        },
+        "InsuranceCompany": {
+          "type": "string"
+        },
+        "InsuranceValue": {
+          "format": "double",
+          "type": "number"
+        },
+        "Courtname": {
+          "type": "string"
+        },
+        "InsuranceContractID": {
+          "type": "string"
+        },
+        "Email": {
+          "type": "string"
+        },
+        "Phone": {
+          "type": "string"
+        },
+        "MobilePhone": {
+          "type": "string"
+        },
+        "OfficeHours": {
+          "type": "string"
+        },
+        "CountryId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "DistrictId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "LocalityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Address": {
+          "type": "string"
+        },
+        "ZipCode": {
+          "type": "string"
+        },
+        "GMapLat": {
+          "type": "string"
+        },
+        "GMapLot": {
+          "type": "string"
+        },
+        "Location": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Location.LocationDto"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.IdValueModel": {
+      "type": "object",
+      "properties": {
+        "ParentId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Value": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.User.UserPortalDto": {
+      "type": "object",
+      "properties": {
+        "UserID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PortalID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MaxProperties": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PortalLogo": {
+          "type": "string"
+        },
+        "ManagerOnly": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntitiesLocaleDto": {
+      "type": "object",
+      "properties": {
+        "EntityID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CultureID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Title": {
+          "type": "string"
+        },
+        "ShortDescription": {
+          "type": "string"
+        },
+        "Description": {
+          "type": "string"
+        },
+        "DescriptionLuxury": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityFileDto": {
+      "type": "object",
+      "properties": {
+        "EntityFileID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "EntityID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "isPhoto": {
+          "type": "boolean"
+        },
+        "SortOrder": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Filename": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Agency.AgencyDtoShort": {
+      "type": "object",
+      "properties": {
+        "AgencyID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgencyName": {
+          "type": "string"
+        },
+        "LogoPath": {
+          "type": "string"
+        },
+        "ParentID": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoUrlRq": {
+      "type": "object",
+      "properties": {
+        "webhookUrl": {
+          "type": "string"
+        },
+        "emailAddress": {
+          "type": "string"
+        },
+        "canViewAll": {
+          "type": "boolean"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoUrlRs": {
+      "type": "object",
+      "properties": {
+        "iframeUrl": {
+          "type": "string"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoEntityRq": {
+      "type": "object",
+      "properties": {
+        "emailAddress": {
+          "type": "string"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CasafariGo.CasafariGoEntityRs": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.GenericRs": {
+      "type": "object",
+      "properties": {
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CodeTables.CodeTableRq": {
+      "description": "Represents a request model indicating which types to include in a code table query.",
+      "type": "object",
+      "properties": {
+        "IncludeBusinessTypes": {
+          "description": "Gets or sets a value indicating whether to include business types in the query.",
+          "type": "boolean"
+        },
+        "IncludePropertyTypes": {
+          "description": "Gets or sets a value indicating whether to include property types in the query.",
+          "type": "boolean"
+        },
+        "Lang": {
+          "format": "int32",
+          "description": "sets a value for the language of results.",
+          "type": "integer"
+        },
+        "IncludeZones": {
+          "type": "boolean"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CodeTables.CodeTableRs": {
+      "description": "Represents a response model containing lists of code, name, and value pairs api types.",
+      "type": "object",
+      "properties": {
+        "BusinessTypes": {
+          "description": "Gets or sets a list of code and name pairs for business types.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CodeTables.CodeNameValue"
+          }
+        },
+        "PropertyTypes": {
+          "description": "Gets or sets a list of code and name pairs for property types.",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CodeTables.CodeNameValue"
+          }
+        },
+        "Zones": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.CodeTables.CodeNameValue"
+          }
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.CodeTables.CodeNameValue": {
+      "description": "Represents a model for code, name, and value pairs.",
+      "type": "object",
+      "properties": {
+        "Id": {
+          "format": "int32",
+          "description": "Gets or sets the unique identifier associated with the value.",
+          "type": "integer"
+        },
+        "Name": {
+          "description": "Gets or sets the name associated with the value.",
+          "type": "string"
+        },
+        "Zone": {
+          "type": "string"
+        },
+        "City": {
+          "type": "string"
+        },
+        "CultureId": {
+          "format": "int32",
+          "description": "Gets or sets the culture associated with the value.",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.SystemUserRq": {
+      "type": "object",
+      "properties": {
+        "Lang": {
+          "enum": [
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "it",
+            "de",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "pl",
+            "zh",
+            "ru",
+            "fi"
+          ],
+          "type": "string"
+        },
+        "EntitySearchFilters": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.SystemUserEntitySearchFilters"
+        },
+        "EntityListSorts": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityListSorts"
+        },
+        "Includes": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntitySearchIncludes",
+          "description": "Filters used for entities\r\nAttention: Filter by location only works if IncludeAgencies is true"
+        },
+        "PagingRq": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.PagingRq"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.SystemUserEntitySearchFilters": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        },
+        "CountryId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "LocalityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "RegionId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgencyIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "AgentIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "LocationIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "IncludeChildrenAgencies": {
+          "type": "boolean"
+        },
+        "GetInactive": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityListSorts": {
+      "type": "object",
+      "properties": {
+        "SortBy": {
+          "enum": [
+            "NameAsc",
+            "NameDesc"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntitySearchIncludes": {
+      "type": "object",
+      "properties": {
+        "IncludeAgencies": {
+          "type": "boolean"
+        },
+        "IncludeLocales": {
+          "type": "boolean"
+        },
+        "IncludeEntityFiles": {
+          "type": "boolean"
+        },
+        "IncludeAgenciesLocales": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityListRs": {
+      "type": "object",
+      "properties": {
+        "Entities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityDto"
+          }
+        },
+        "TotalRecords": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PagingRs": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.PagingRs"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityOwnerlinksRq": {
+      "type": "object",
+      "properties": {
+        "PropertyIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "PagingRq": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.PagingRq"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityOwnerlinksRs": {
+      "type": "object",
+      "properties": {
+        "Message": {
+          "type": "string"
+        },
+        "Ownerlinks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Entity.EntityOwnerlinksDto"
+          }
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Entity.EntityOwnerlinksDto": {
+      "type": "object",
+      "properties": {
+        "PropertyId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "OwnerId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CreateDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "OwnerLinkUrl": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.LeadRq": {
+      "type": "object",
+      "properties": {
+        "Settings": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadSettings"
+        },
+        "Contact": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadEntity"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.LeadSettings": {
+      "type": "object",
+      "properties": {
+        "LeadTitle": {
+          "type": "string"
+        },
+        "AssignToPropertyId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AssignToStatusId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AssignToCustomerOriginId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AssignToAgentCurrentlyAssignedToProperty": {
+          "type": "boolean"
+        },
+        "AssignToAgentCurrentlyAssignedToCustomer": {
+          "type": "boolean"
+        },
+        "ForceAgent": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ForceAgent"
+        },
+        "IncludeMailing": {
+          "type": "boolean"
+        },
+        "IncludeOptIn": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.LeadEntity": {
+      "required": [
+        "Name"
+      ],
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        },
+        "Email": {
+          "type": "string"
+        },
+        "Phone": {
+          "type": "string"
+        },
+        "Message": {
+          "type": "string"
+        },
+        "Address": {
+          "type": "string"
+        },
+        "Location": {
+          "type": "string"
+        },
+        "Culture": {
+          "enum": [
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "it",
+            "de",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "pl",
+            "zh",
+            "ru",
+            "fi"
+          ],
+          "type": "string"
+        },
+        "CountryISO": {
+          "enum": [
+            "AD",
+            "AE",
+            "AF",
+            "AG",
+            "AL",
+            "AM",
+            "AO",
+            "AR",
+            "AT",
+            "AU",
+            "AW",
+            "AZ",
+            "BA",
+            "BB",
+            "BD",
+            "BE",
+            "BF",
+            "BG",
+            "BH",
+            "BI",
+            "BJ",
+            "BL",
+            "BM",
+            "BN",
+            "BO",
+            "BR",
+            "BS",
+            "BT",
+            "BW",
+            "BY",
+            "BZ",
+            "CA",
+            "CD",
+            "CF",
+            "CG",
+            "CH",
+            "CI",
+            "CL",
+            "CM",
+            "CN",
+            "CO",
+            "CR",
+            "CU",
+            "CV",
+            "CY",
+            "CZ",
+            "DE",
+            "DJ",
+            "DK",
+            "DM",
+            "DO",
+            "DZ",
+            "EC",
+            "EE",
+            "EG",
+            "EH",
+            "ER",
+            "ES",
+            "ET",
+            "FI",
+            "FJ",
+            "FK",
+            "FM",
+            "FO",
+            "FR",
+            "GA",
+            "GB",
+            "GD",
+            "GE",
+            "GF",
+            "GG",
+            "GH",
+            "GI",
+            "GL",
+            "GM",
+            "GN",
+            "GP",
+            "GQ",
+            "GR",
+            "GT",
+            "GW",
+            "GY",
+            "HK",
+            "HN",
+            "HR",
+            "HT",
+            "HU",
+            "ID",
+            "IE",
+            "IL",
+            "IM",
+            "IN",
+            "IQ",
+            "IR",
+            "IS",
+            "IT",
+            "JE",
+            "JM",
+            "JO",
+            "JP",
+            "KE",
+            "KG",
+            "KH",
+            "KI",
+            "KM",
+            "KN",
+            "KP",
+            "KR",
+            "KV",
+            "KW",
+            "KY",
+            "KZ",
+            "LA",
+            "LB",
+            "LC",
+            "LI",
+            "LK",
+            "LR",
+            "LS",
+            "LT",
+            "LU",
+            "LV",
+            "LY",
+            "MA",
+            "MC",
+            "MD",
+            "ME",
+            "MF",
+            "MG",
+            "MH",
+            "MK",
+            "ML",
+            "MM",
+            "MN",
+            "MO",
+            "MQ",
+            "MR",
+            "MT",
+            "MU",
+            "MV",
+            "MW",
+            "MX",
+            "MY",
+            "MZ",
+            "NA",
+            "NC",
+            "NE",
+            "NG",
+            "NI",
+            "NL",
+            "NO",
+            "NP",
+            "NR",
+            "NZ",
+            "OM",
+            "PA",
+            "PE",
+            "PF",
+            "PG",
+            "PH",
+            "PK",
+            "PL",
+            "PM",
+            "PR",
+            "PT",
+            "PW",
+            "PY",
+            "QA",
+            "RE",
+            "RO",
+            "RS",
+            "RU",
+            "RW",
+            "SA",
+            "SB",
+            "SC",
+            "SD",
+            "SE",
+            "SG",
+            "SI",
+            "SJ",
+            "SK",
+            "SL",
+            "SM",
+            "SN",
+            "SO",
+            "SR",
+            "SS",
+            "ST",
+            "SV",
+            "SY",
+            "SZ",
+            "TC",
+            "TD",
+            "TG",
+            "TH",
+            "TJ",
+            "TL",
+            "TM",
+            "TN",
+            "TO",
+            "TR",
+            "TT",
+            "TV",
+            "TW",
+            "TZ",
+            "UA",
+            "UG",
+            "US",
+            "UY",
+            "UZ",
+            "VA",
+            "VC",
+            "VE",
+            "VG",
+            "VN",
+            "VU",
+            "WF",
+            "WS",
+            "YE",
+            "YT",
+            "ZA",
+            "ZM",
+            "ZW"
+          ],
+          "type": "string"
+        },
+        "Type": {
+          "enum": [
+            "Buyer",
+            "Renter",
+            "Seller"
+          ],
+          "type": "string"
+        },
+        "Profile": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadProfile"
+        },
+        "Nationality": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ForceAgent": {
+      "type": "object",
+      "properties": {
+        "AgentId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgentEmail": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.LeadProfile": {
+      "type": "object",
+      "properties": {
+        "ForceNewProfileToExistingContact": {
+          "type": "boolean"
+        },
+        "Bedrooms": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadFromTo"
+        },
+        "Price": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadFromTo"
+        },
+        "Bathrooms": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadFromTo"
+        },
+        "HouseArea": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadFromTo"
+        },
+        "LandArea": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.LeadFromTo"
+        },
+        "PropertyType": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "Apartment",
+              "Building",
+              "Castle",
+              "Chalet",
+              "CommercialProperty",
+              "Complex",
+              "DuplexApartment",
+              "Farmhouse",
+              "Garage",
+              "Hotel",
+              "Land",
+              "Office",
+              "ParkingPlace",
+              "Plot",
+              "Ruin",
+              "StorageRoom",
+              "Townhouse",
+              "Villa",
+              "Warehouse",
+              "Farm",
+              "Studio",
+              "UrbanLand",
+              "RestaurantsBarsShops",
+              "ComercialShop",
+              "SemiDetached",
+              "RuralLand",
+              "ManorHouse",
+              "LandWithProject",
+              "RestaurantSnack",
+              "CountryHouse",
+              "VillaFloor",
+              "VilaToBeRenovated",
+              "Room",
+              "Loft",
+              "Business"
+            ],
+            "type": "string"
+          }
+        },
+        "Regions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Cities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Localities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Zone": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "Note": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.LeadFromTo": {
+      "type": "object",
+      "properties": {
+        "From": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "To": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.LeadtRs": {
+      "type": "object",
+      "properties": {
+        "LeadId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.GetLeadRq": {
+      "type": "object",
+      "properties": {
+        "Language": {
+          "enum": [
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "it",
+            "de",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "pl",
+            "zh",
+            "ru",
+            "fi"
+          ],
+          "type": "string"
+        },
+        "StartDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "EndDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "Category": {
+          "enum": [
+            "Sales",
+            "Listings"
+          ],
+          "type": "string"
+        },
+        "OriginId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ListLeadsRs": {
+      "type": "object",
+      "properties": {
+        "Opportunities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsOpportunity"
+          }
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ListLeadsOpportunity": {
+      "type": "object",
+      "properties": {
+        "Id": {
+          "type": "string"
+        },
+        "Title": {
+          "type": "string"
+        },
+        "CurrentStatus": {
+          "type": "string"
+        },
+        "CreateDate": {
+          "type": "string"
+        },
+        "LastUpdate": {
+          "type": "string"
+        },
+        "Origin": {
+          "type": "string"
+        },
+        "Description": {
+          "type": "string"
+        },
+        "Outcome": {
+          "type": "string"
+        },
+        "OutcomeDate": {
+          "type": "string"
+        },
+        "EventPriority": {
+          "type": "string"
+        },
+        "EventType": {
+          "type": "string"
+        },
+        "SalePrice": {
+          "type": "string"
+        },
+        "Agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsAgent"
+          }
+        },
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsProperty"
+          }
+        },
+        "Customer": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsCustomer"
+        },
+        "Events": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsEvent"
+          }
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ListLeadsAgent": {
+      "type": "object",
+      "properties": {
+        "AgentID": {
+          "type": "string"
+        },
+        "AgentName": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ListLeadsProperty": {
+      "type": "object",
+      "properties": {
+        "PropertyID": {
+          "type": "string"
+        },
+        "Reference": {
+          "type": "string"
+        },
+        "Address": {
+          "type": "string"
+        },
+        "SurfaceArea": {
+          "type": "string"
+        },
+        "Price": {
+          "type": "string"
+        },
+        "Comission": {
+          "type": "string"
+        },
+        "ComissionPercentage": {
+          "type": "string"
+        },
+        "LastUpdate": {
+          "type": "string"
+        },
+        "GrossArea": {
+          "type": "string"
+        },
+        "LandArea": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ListLeadsCustomer": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "string"
+        },
+        "EmailAddress": {
+          "type": "string"
+        },
+        "PhoneNumber": {
+          "type": "string"
+        },
+        "Language": {
+          "type": "string"
+        },
+        "TaxIdentificationNumber": {
+          "type": "string"
+        },
+        "Nationality": {
+          "type": "string"
+        },
+        "DateOfBirth": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "MaritalStatus": {
+          "type": "string"
+        },
+        "IdentificationNumber": {
+          "type": "string"
+        },
+        "Address": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Lead.ListLeadsEvent": {
+      "type": "object",
+      "properties": {
+        "EventID": {
+          "type": "string"
+        },
+        "EventType": {
+          "type": "string"
+        },
+        "EventTypeID": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Title": {
+          "type": "string"
+        },
+        "Location": {
+          "type": "string"
+        },
+        "Description": {
+          "type": "string"
+        },
+        "StartDate": {
+          "type": "string"
+        },
+        "EndDate": {
+          "type": "string"
+        },
+        "Agents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Lead.ListLeadsAgent"
+          }
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyRq": {
+      "type": "object",
+      "properties": {
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.Property"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.Property": {
+      "required": [
+        "propertyId",
+        "internalId",
+        "reference"
+      ],
+      "type": "object",
+      "properties": {
+        "propertyId": {
+          "format": "int32",
+          "description": "Property Id will be used to sync the two systems.",
+          "type": "integer"
+        },
+        "internalId": {
+          "description": "Property InternalId will be used to sync the two systems.",
+          "type": "string"
+        },
+        "reference": {
+          "description": "Property reference",
+          "type": "string"
+        },
+        "status": {
+          "description": "Property status",
+          "enum": [
+            "Active",
+            "Inactive",
+            "Pending"
+          ],
+          "type": "string"
+        },
+        "sold": {
+          "description": "To indicate that property marked is sold",
+          "type": "boolean"
+        },
+        "visibleOnWebsite": {
+          "description": "To indicate to show property on website",
+          "type": "boolean"
+        },
+        "type": {
+          "description": "Property type",
+          "enum": [
+            "Apartment",
+            "Building",
+            "Castle",
+            "Chalet",
+            "CommercialProperty",
+            "Complex",
+            "DuplexApartment",
+            "Farmhouse",
+            "Garage",
+            "Hotel",
+            "Land",
+            "Office",
+            "ParkingPlace",
+            "Plot",
+            "Ruin",
+            "StorageRoom",
+            "Townhouse",
+            "Villa",
+            "Warehouse",
+            "Farm",
+            "Studio",
+            "UrbanLand",
+            "RestaurantsBarsShops",
+            "ComercialShop",
+            "SemiDetached",
+            "RuralLand",
+            "ManorHouse",
+            "LandWithProject",
+            "RestaurantSnack",
+            "CountryHouse",
+            "VillaFloor",
+            "VilaToBeRenovated",
+            "Room",
+            "Loft",
+            "Business"
+          ],
+          "type": "string"
+        },
+        "bathrooms": {
+          "format": "int32",
+          "description": "Number of bathrooms",
+          "type": "integer"
+        },
+        "bedrooms": {
+          "format": "int32",
+          "description": "Number of rooms",
+          "type": "integer"
+        },
+        "condition_type": {
+          "description": "Property Condition Type",
+          "enum": [
+            "New",
+            "Used",
+            "UnderConstruction",
+            "NotApplicable",
+            "VeryGood",
+            "Project",
+            "ToRefurbish",
+            "Renovated",
+            "PartlyRenovated",
+            "InGoodCondition",
+            "InExcellentCondition",
+            "Ruin",
+            "NotOccupied",
+            "OccupiedByOwner",
+            "PropertyBeingRented",
+            "Refurbished",
+            "LuxuryFinishings",
+            "NewBuild"
+          ],
+          "type": "string"
+        },
+        "construction_year": {
+          "format": "int32",
+          "description": "Property built year",
+          "type": "integer"
+        },
+        "price": {
+          "format": "int32",
+          "description": "Property sale/rent price",
+          "type": "integer"
+        },
+        "second_price": {
+          "format": "int32",
+          "description": "Property sale/rent price",
+          "type": "integer"
+        },
+        "price_visible": {
+          "description": "Property price_visible",
+          "type": "boolean"
+        },
+        "currency": {
+          "description": "Property price",
+          "enum": [
+            "EUR",
+            "GBP",
+            "USD"
+          ],
+          "type": "string"
+        },
+        "businessType": {
+          "description": "Property business type",
+          "enum": [
+            "Sale",
+            "RentWeekly",
+            "Rent",
+            "Leasing",
+            "PartExchange",
+            "SaleAndRent"
+          ],
+          "type": "string"
+        },
+        "plot_area": {
+          "format": "double",
+          "description": "Property land area",
+          "type": "number"
+        },
+        "living_area": {
+          "format": "double",
+          "description": "property living area",
+          "type": "number"
+        },
+        "total_area": {
+          "format": "double",
+          "description": "property total area",
+          "type": "number"
+        },
+        "locale": {
+          "description": "Multi culture property descriptions",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.Locale"
+          }
+        },
+        "energy_rating": {
+          "description": "Property energy rating",
+          "enum": [
+            "APlus",
+            "A",
+            "B",
+            "BMinus",
+            "C",
+            "D",
+            "E",
+            "F",
+            "G",
+            "Exempt",
+            "InProgress"
+          ],
+          "type": "string"
+        },
+        "features_list": {
+          "description": "Property Features List",
+          "type": "array",
+          "items": {
+            "enum": [
+              "AirConditioning",
+              "AirConditioningPreInstallation",
+              "AlarmPreInstallation",
+              "Attic",
+              "AutomaticIrrigation",
+              "Balcony",
+              "Barbecue",
+              "Basement",
+              "Borehole",
+              "BreadOven",
+              "CentralLocation",
+              "CentralMusicSystem",
+              "CentralVacuumSystem",
+              "ClosedFireplace",
+              "Conservatory",
+              "DishwashingMachine",
+              "Domotics",
+              "DoubleGlazing",
+              "DriveWay",
+              "ElectricGarageGate",
+              "ElectricShutters",
+              "EquippedKitchen",
+              "Fireplace",
+              "FittedWardrobes",
+              "FrontlineProperty",
+              "Furnished",
+              "Garage",
+              "Garden",
+              "GasCentralHeating",
+              "GasFire",
+              "GuestCottage",
+              "Gym",
+              "Heating",
+              "HomeAutomationPreInstallation",
+              "HydrotherapyBath",
+              "IrrigationSystem",
+              "Jacuzzi",
+              "Kitchenette",
+              "LaminatedFloor",
+              "Laundry",
+              "Lift",
+              "MainDrainage",
+              "MainsWater",
+              "Paddock",
+              "Pantry",
+              "ParkingSpace",
+              "Pool",
+              "PrivateCondominium",
+              "QuietLocation",
+              "RentalLicence",
+              "Safe",
+              "SealedLandArea",
+              "SecurityAlarm",
+              "SecurityDoor",
+              "SepticTank",
+              "SolarHeating",
+              "SolarPanelsPreInstallation",
+              "Stables",
+              "StorageUtilityRoom",
+              "TennisCourt",
+              "Terrace",
+              "Thermoaccumulator",
+              "Underfloor",
+              "UnderFloorHeating",
+              "UninterruptedViews",
+              "VideoEntrySystem",
+              "WalkInWardrobe",
+              "WashingMachine",
+              "WaterCistern",
+              "Well",
+              "WineCellar",
+              "WoodBurner",
+              "HeatedPool",
+              "RoofTerrace",
+              "SeaViews"
+            ],
+            "type": "string"
+          }
+        },
+        "location": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.Location",
+          "description": "Property location"
+        },
+        "listing_agent": {
+          "description": "Email of assigned agent",
+          "type": "string"
+        },
+        "photos": {
+          "description": "Property Photos",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyPhotos"
+          }
+        },
+        "photosWithoutWatermark": {
+          "description": "Property Photos",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyPhotos"
+          }
+        },
+        "files": {
+          "description": "Property Files",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyFiles"
+          }
+        },
+        "portals": {
+          "description": "Portal to sell property",
+          "type": "array",
+          "items": {
+            "enum": [
+              "APlaceInTheSun",
+              "Arkadia",
+              "BellesPierres",
+              "BienIci",
+              "BPIExpresso",
+              "BureauxLocaux",
+              "CessionPME",
+              "Cyphoma",
+              "Diferenty",
+              "Domimmo",
+              "Fotocasa",
+              "Globimmo",
+              "GreenAcres",
+              "Habitaclia",
+              "HaTudo",
+              "IdealistaPortugal",
+              "IdealistaSpain",
+              "ImLix",
+              "Immo974",
+              "Immobly",
+              "ImmoRegion",
+              "ImoPortugal",
+              "Imovirtual",
+              "Indomio",
+              "JamesEdition",
+              "Kasaz",
+              "KipperTree",
+              "Kyero",
+              "LeFigaro",
+              "LesClesDuMindi",
+              "LeSiteImmo",
+              "LesTerrains",
+              "Listanza",
+              "ListGlobally",
+              "LogicImmo",
+              "LuxResidence",
+              "LuxuryEstate",
+              "MeilleursAgent",
+              "MerEtDemeures",
+              "MoveAgain",
+              "Mowido",
+              "OuestFranceImmo",
+              "ParuVendu",
+              "Pisos",
+              "PortugalCasa",
+              "PortugalNews",
+              "PropertyGuides",
+              "ProprieteLeFigaro",
+              "QuatreVingtDixSeptImmo",
+              "Rightmove",
+              "Seloger",
+              "SeLogerBureaux",
+              "Superimmo",
+              "Temvalor",
+              "ThinkSpain",
+              "UbiFlow",
+              "VarImmo",
+              "VisiteOnline",
+              "Yaencontre",
+              "Zoopla"
+            ],
+            "type": "string"
+          }
+        },
+        "video": {
+          "description": "video",
+          "type": "string"
+        },
+        "widepanorama": {
+          "description": "Floorplan",
+          "type": "string"
+        },
+        "floorplan": {
+          "description": "floorplan",
+          "type": "string"
+        },
+        "numberOfFloors": {
+          "format": "int32",
+          "description": "Number Of Floors",
+          "type": "integer"
+        },
+        "floorNumber": {
+          "format": "int32",
+          "description": "Floor Number",
+          "type": "integer"
+        },
+        "floorNumberString": {
+          "description": "Floor Number string",
+          "type": "string"
+        },
+        "exclusive": {
+          "description": "Property is Exclusive",
+          "type": "boolean"
+        },
+        "cadastralReference": {
+          "description": "Property Cadastral Reference",
+          "type": "string"
+        },
+        "createDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "lastChangeDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "inactiveReason": {
+          "type": "string"
+        },
+        "preOffMarket": {
+          "type": "boolean"
+        },
+        "doorNumber": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.Locale": {
+      "description": "Multi culture property description",
+      "type": "object",
+      "properties": {
+        "title": {
+          "description": "Property title",
+          "type": "string"
+        },
+        "description": {
+          "description": "Property description",
+          "type": "string"
+        },
+        "short": {
+          "description": "Property short description",
+          "type": "string"
+        },
+        "seokeywords": {
+          "description": "Property SEO/Keywords",
+          "type": "string"
+        },
+        "seodescription": {
+          "description": "Property SEO/Description",
+          "type": "string"
+        },
+        "language": {
+          "description": "Property title/description language",
+          "enum": [
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "it",
+            "de",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "pl",
+            "zh",
+            "ru",
+            "fi"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.Location": {
+      "description": "Property Location",
+      "type": "object",
+      "properties": {
+        "coordinates": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.Coordinates",
+          "description": ""
+        },
+        "countryCode": {
+          "enum": [
+            "pt",
+            "es",
+            "fr",
+            "it",
+            "pa",
+            "br"
+          ],
+          "type": "string"
+        },
+        "locationId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "zone": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "zipcode": {
+          "type": "string"
+        },
+        "regionName": {
+          "type": "string"
+        },
+        "cityName": {
+          "type": "string"
+        },
+        "localityName": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyPhotos": {
+      "description": "Property Photos",
+      "type": "object",
+      "properties": {
+        "Url": {
+          "type": "string"
+        },
+        "Category": {
+          "type": "string"
+        },
+        "Description": {
+          "type": "string"
+        },
+        "SortOrder": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyFiles": {
+      "description": "Property Files",
+      "type": "object",
+      "properties": {
+        "Filename": {
+          "type": "string"
+        },
+        "Category": {
+          "type": "string"
+        },
+        "SortOrder": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.Coordinates": {
+      "type": "object",
+      "properties": {
+        "latitude": {
+          "type": "string"
+        },
+        "longitude": {
+          "type": "string"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyRs": {
+      "type": "object",
+      "properties": {
+        "Properties": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.Property"
+          }
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.FilterRq": {
+      "type": "object",
+      "properties": {
+        "PropertyIncludes": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyDetailSearchIncludes"
+        },
+        "PropertyId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PortalId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PropertyIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "PropertyButtonIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "PropertyButtonIdsToExclude": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "Reference": {
+          "type": "string"
+        },
+        "InactiveReason": {
+          "type": "string"
+        },
+        "BusinessTypeIds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "Sale",
+              "RentWeekly",
+              "Rent",
+              "Leasing",
+              "PartExchange",
+              "SaleAndRent"
+            ],
+            "type": "string"
+          }
+        },
+        "ConditionTypeIds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "New",
+              "Used",
+              "UnderConstruction",
+              "NotApplicable",
+              "SemiNew",
+              "Project",
+              "NeedsRenovation",
+              "Renovated",
+              "PartlyRenovated",
+              "InGoodCondition",
+              "InExcellentCondition",
+              "Ruin",
+              "NotOccupied",
+              "OccupiedByOwner",
+              "PropertyBeingRented",
+              "Refurbished",
+              "LuxuryFinishings",
+              "NewBuild"
+            ],
+            "type": "string"
+          }
+        },
+        "PropertyTypeIds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "Apartment",
+              "Building",
+              "Castle",
+              "Chalet",
+              "CommercialProperty",
+              "Complex",
+              "DuplexApartment",
+              "Farmhouse",
+              "Garage",
+              "Hotel",
+              "Land",
+              "Office",
+              "ParkingPlace",
+              "Plot",
+              "Ruin",
+              "StorageRoom",
+              "Townhouse",
+              "Villa",
+              "Warehouse",
+              "Farm",
+              "Studio",
+              "UrbanLand",
+              "RestaurantsBarsShops",
+              "ComercialShop",
+              "SemiDetached",
+              "RuralLand",
+              "ManorHouse",
+              "LandWithProject",
+              "RestaurantSnack",
+              "CountryHouse",
+              "VillaFloor",
+              "VilaToBeRenovated",
+              "Room",
+              "Loft",
+              "Business"
+            ],
+            "type": "string"
+          }
+        },
+        "TypologyIds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "NotApplicable",
+              "T0",
+              "T1",
+              "T2",
+              "T3",
+              "T4",
+              "T5",
+              "T6andMore"
+            ],
+            "type": "string"
+          }
+        },
+        "DetailIds": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "AirConditioning",
+              "AirConditioningPreInstallation",
+              "AlarmPreInstallation",
+              "Attic",
+              "AutomaticIrrigation",
+              "Balcony",
+              "Barbecue",
+              "Basement",
+              "Borehole",
+              "BreadOven",
+              "CentralLocation",
+              "CentralMusicSystem",
+              "CentralVacuumSystem",
+              "ClosedFireplace",
+              "Conservatory",
+              "DishwashingMachine",
+              "Domotics",
+              "DoubleGlazing",
+              "DriveWay",
+              "ElectricGarageGate",
+              "ElectricShutters",
+              "EquippedKitchen",
+              "Fireplace",
+              "FittedWardrobes",
+              "FrontlineProperty",
+              "Furnished",
+              "Garage",
+              "Garden",
+              "GasCentralHeating",
+              "GasFire",
+              "GuestCottage",
+              "Gym",
+              "Heating",
+              "HomeAutomationPreInstallation",
+              "HydrotherapyBath",
+              "IrrigationSystem",
+              "Jacuzzi",
+              "Kitchenette",
+              "LaminatedFloor",
+              "Laundry",
+              "Lift",
+              "MainDrainage",
+              "MainsWater",
+              "Paddock",
+              "Pantry",
+              "ParkingSpace",
+              "Pool",
+              "PrivateCondominium",
+              "QuietLocation",
+              "RentalLicence",
+              "Safe",
+              "SealedLandArea",
+              "SecurityAlarm",
+              "SecurityDoor",
+              "SepticTank",
+              "SolarHeating",
+              "SolarPanelsPreInstallation",
+              "Stables",
+              "StorageUtilityRoom",
+              "TennisCourt",
+              "Terrace",
+              "Thermoaccumulator",
+              "Underfloor",
+              "UnderFloorHeating",
+              "UninterruptedViews",
+              "VideoEntrySystem",
+              "WalkInWardrobe",
+              "WashingMachine",
+              "WaterCistern",
+              "Well",
+              "WineCellar",
+              "WoodBurner",
+              "HeatedPool",
+              "RoofTerrace",
+              "SeaViews"
+            ],
+            "type": "string"
+          }
+        },
+        "NumericDetailIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "Locations": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.LocationList"
+        },
+        "PriceFrom": {
+          "format": "double",
+          "type": "number"
+        },
+        "PriceTo": {
+          "format": "double",
+          "type": "number"
+        },
+        "MinBedrooms": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MaxBedrooms": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MinBathrooms": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MaxBathrooms": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MinLivingArea": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MaxLivingArea": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MinPlotArea": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MaxPlotArea": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MinTotalArea": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "MaxTotalArea": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "OnFocus": {
+          "type": "boolean"
+        },
+        "Opportunity": {
+          "type": "boolean"
+        },
+        "Featured": {
+          "type": "boolean"
+        },
+        "ReturnAll": {
+          "type": "boolean"
+        },
+        "ExcludeBuildings": {
+          "type": "boolean"
+        },
+        "Active": {
+          "type": "boolean"
+        },
+        "VisibleOnWebsite": {
+          "type": "boolean"
+        },
+        "Sold": {
+          "type": "boolean"
+        },
+        "Building_Id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Zone": {
+          "type": "string"
+        },
+        "SequenceNmbr": {
+          "format": "int32",
+          "description": "This is used for pagination\r\nStarts with the value 1",
+          "type": "integer"
+        },
+        "MaxResponses": {
+          "format": "int32",
+          "description": "This is the number of properties that are get for each page (SequenceNmbr)\r\nThe Max amount of properties that can be get is 100",
+          "type": "integer"
+        },
+        "Lang": {
+          "enum": [
+            "pt",
+            "en",
+            "es",
+            "fr",
+            "it",
+            "de",
+            "nl",
+            "sv",
+            "da",
+            "no",
+            "pl",
+            "zh",
+            "ru",
+            "fi"
+          ],
+          "type": "string"
+        },
+        "HasVideo": {
+          "type": "boolean"
+        },
+        "HasFloorplan": {
+          "type": "boolean"
+        },
+        "HasWidepanorama": {
+          "type": "boolean"
+        },
+        "HasExclusive": {
+          "type": "boolean"
+        },
+        "ExcludePOA": {
+          "type": "boolean"
+        },
+        "AgentId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "AgencyId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "PropertyListSorts": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyListSorts"
+        },
+        "InnertLocations": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnertLocations"
+        },
+        "From": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyFrom"
+        },
+        "FreeText": {
+          "description": "Allows to search properties by Title, PropertyType, Locality, City, Address, Zone, Region and Reference",
+          "type": "string"
+        },
+        "FreeTextFiltersToExclude": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.FreeTextFiltersToExclude"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyDetailSearchIncludes": {
+      "type": "object",
+      "properties": {
+        "IncludeFeatures": {
+          "type": "boolean"
+        },
+        "IncludeBrokers": {
+          "type": "boolean"
+        },
+        "IncludeAgency": {
+          "type": "boolean"
+        },
+        "UseHtmlDescription": {
+          "type": "boolean"
+        },
+        "IncludeFeaturesByCategory": {
+          "type": "boolean"
+        },
+        "GetAgencyIsShopAsPropertyAgency": {
+          "type": "boolean"
+        },
+        "IncludePropertyOccupations": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.LocationList": {
+      "type": "object",
+      "properties": {
+        "CountryCode": {
+          "enum": [
+            "pt",
+            "es",
+            "fr",
+            "it",
+            "pa",
+            "br"
+          ],
+          "type": "string"
+        },
+        "LocationIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyListSorts": {
+      "type": "object",
+      "properties": {
+        "SortBy": {
+          "enum": [
+            "DateAsc",
+            "DateDesc",
+            "PriceAsc",
+            "PriceDesc",
+            "LastChangeDate",
+            "PropertyIdAsc",
+            "PropertyIdDesc",
+            "PropertyExclusiveAsc",
+            "PropertyExclusiveDesc",
+            "ModifiedDateAsc",
+            "ModifiedDateDesc",
+            "PropertyExclusiveAndOnFocusAsc",
+            "PropertyExclusiveAndOnFocusDesc"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.InnertLocations": {
+      "type": "object",
+      "properties": {
+        "CountryIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "RegionIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "CityIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "LocalityIds": {
+          "type": "array",
+          "items": {
+            "format": "int32",
+            "type": "integer"
+          }
+        },
+        "Zonenames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyFrom": {
+      "type": "object",
+      "properties": {
+        "Date": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "Type": {
+          "enum": [
+            "Created",
+            "Modified"
+          ],
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.FreeTextFiltersToExclude": {
+      "type": "object",
+      "properties": {
+        "Title": {
+          "type": "boolean"
+        },
+        "City": {
+          "type": "boolean"
+        },
+        "Locality": {
+          "type": "boolean"
+        },
+        "Address": {
+          "type": "boolean"
+        },
+        "Zonename": {
+          "type": "boolean"
+        },
+        "Region": {
+          "type": "boolean"
+        },
+        "PropertyType": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyListRs": {
+      "type": "object",
+      "properties": {
+        "PropertyList": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyList"
+          }
+        },
+        "Count": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyList": {
+      "required": [
+        "propertyId",
+        "internalId",
+        "reference"
+      ],
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int32",
+          "description": "Record Id",
+          "type": "integer"
+        },
+        "businessType": {
+          "description": "Property business type",
+          "type": "string"
+        },
+        "businessTypeLocale": {
+          "description": "Property business type locale",
+          "type": "string"
+        },
+        "type": {
+          "description": "Property type",
+          "type": "string"
+        },
+        "typeLocale": {
+          "description": "Property type locale",
+          "type": "string"
+        },
+        "condition_type": {
+          "description": "Property Condition Type",
+          "type": "string"
+        },
+        "conditionTypeLocale": {
+          "description": "Property condition type locale",
+          "type": "string"
+        },
+        "features_list": {
+          "description": "Property Features List",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "currency": {
+          "description": "Property price",
+          "type": "string"
+        },
+        "status": {
+          "description": "Property status",
+          "type": "string"
+        },
+        "energy_rating": {
+          "description": "Property energy rating",
+          "type": "string"
+        },
+        "locale": {
+          "description": "Multi culture property descriptions",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.LocaleList"
+          }
+        },
+        "location": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyLocationList",
+          "description": "Property location"
+        },
+        "listing_agent": {
+          "description": "Email of assigned agent",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.ListingAgent"
+          }
+        },
+        "OnFocus": {
+          "type": "boolean"
+        },
+        "Opportunity": {
+          "type": "boolean"
+        },
+        "Featured": {
+          "type": "boolean"
+        },
+        "building_id": {
+          "format": "int32",
+          "description": "property id of the building",
+          "type": "integer"
+        },
+        "priceprefixhelper": {
+          "description": "currency code: EUR, USD, etc",
+          "type": "string"
+        },
+        "typology": {
+          "description": "property Typology",
+          "type": "string"
+        },
+        "features_list_enum": {
+          "description": "property FeaturesListEnum",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "features_list_categorized": {
+          "description": "property FeatureListCategorized",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.DetailsObjects"
+          }
+        },
+        "ami": {
+          "type": "string"
+        },
+        "propertyId": {
+          "format": "int32",
+          "description": "Property Id will be used to sync the two systems.",
+          "type": "integer"
+        },
+        "internalId": {
+          "description": "Property InternalId will be used to sync the two systems.",
+          "type": "string"
+        },
+        "reference": {
+          "description": "Property reference",
+          "type": "string"
+        },
+        "sold": {
+          "description": "To indicate that property marked is sold",
+          "type": "boolean"
+        },
+        "visibleOnWebsite": {
+          "description": "To indicate to show property on website",
+          "type": "boolean"
+        },
+        "bathrooms": {
+          "format": "int32",
+          "description": "Number of bathrooms",
+          "type": "integer"
+        },
+        "bedrooms": {
+          "format": "int32",
+          "description": "Number of rooms",
+          "type": "integer"
+        },
+        "construction_year": {
+          "format": "int32",
+          "description": "Property built year",
+          "type": "integer"
+        },
+        "price": {
+          "format": "int32",
+          "description": "Property sale/rent price",
+          "type": "integer"
+        },
+        "second_price": {
+          "format": "int32",
+          "description": "Property sale/rent price",
+          "type": "integer"
+        },
+        "price_visible": {
+          "description": "Property price_visible",
+          "type": "boolean"
+        },
+        "plot_area": {
+          "format": "double",
+          "description": "Property land area",
+          "type": "number"
+        },
+        "living_area": {
+          "format": "double",
+          "description": "property living area",
+          "type": "number"
+        },
+        "total_area": {
+          "format": "double",
+          "description": "property total area",
+          "type": "number"
+        },
+        "photos": {
+          "description": "Property Photos",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyPhotos"
+          }
+        },
+        "photosWithoutWatermark": {
+          "description": "Property Photos",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyPhotos"
+          }
+        },
+        "files": {
+          "description": "Property Files",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyFiles"
+          }
+        },
+        "portals": {
+          "description": "Portal to sell property",
+          "type": "array",
+          "items": {
+            "enum": [
+              "APlaceInTheSun",
+              "Arkadia",
+              "BellesPierres",
+              "BienIci",
+              "BPIExpresso",
+              "BureauxLocaux",
+              "CessionPME",
+              "Cyphoma",
+              "Diferenty",
+              "Domimmo",
+              "Fotocasa",
+              "Globimmo",
+              "GreenAcres",
+              "Habitaclia",
+              "HaTudo",
+              "IdealistaPortugal",
+              "IdealistaSpain",
+              "ImLix",
+              "Immo974",
+              "Immobly",
+              "ImmoRegion",
+              "ImoPortugal",
+              "Imovirtual",
+              "Indomio",
+              "JamesEdition",
+              "Kasaz",
+              "KipperTree",
+              "Kyero",
+              "LeFigaro",
+              "LesClesDuMindi",
+              "LeSiteImmo",
+              "LesTerrains",
+              "Listanza",
+              "ListGlobally",
+              "LogicImmo",
+              "LuxResidence",
+              "LuxuryEstate",
+              "MeilleursAgent",
+              "MerEtDemeures",
+              "MoveAgain",
+              "Mowido",
+              "OuestFranceImmo",
+              "ParuVendu",
+              "Pisos",
+              "PortugalCasa",
+              "PortugalNews",
+              "PropertyGuides",
+              "ProprieteLeFigaro",
+              "QuatreVingtDixSeptImmo",
+              "Rightmove",
+              "Seloger",
+              "SeLogerBureaux",
+              "Superimmo",
+              "Temvalor",
+              "ThinkSpain",
+              "UbiFlow",
+              "VarImmo",
+              "VisiteOnline",
+              "Yaencontre",
+              "Zoopla"
+            ],
+            "type": "string"
+          }
+        },
+        "video": {
+          "description": "video",
+          "type": "string"
+        },
+        "widepanorama": {
+          "description": "Floorplan",
+          "type": "string"
+        },
+        "floorplan": {
+          "description": "floorplan",
+          "type": "string"
+        },
+        "numberOfFloors": {
+          "format": "int32",
+          "description": "Number Of Floors",
+          "type": "integer"
+        },
+        "floorNumber": {
+          "format": "int32",
+          "description": "Floor Number",
+          "type": "integer"
+        },
+        "floorNumberString": {
+          "description": "Floor Number string",
+          "type": "string"
+        },
+        "exclusive": {
+          "description": "Property is Exclusive",
+          "type": "boolean"
+        },
+        "cadastralReference": {
+          "description": "Property Cadastral Reference",
+          "type": "string"
+        },
+        "createDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "lastChangeDate": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "inactiveReason": {
+          "type": "string"
+        },
+        "preOffMarket": {
+          "type": "boolean"
+        },
+        "doorNumber": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.LocaleList": {
+      "description": "Multi culture property description",
+      "type": "object",
+      "properties": {
+        "language": {
+          "description": "",
+          "type": "string"
+        },
+        "labels": {
+          "description": "Property buttons",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyButtons"
+          }
+        },
+        "title": {
+          "description": "Property title",
+          "type": "string"
+        },
+        "description": {
+          "description": "Property description",
+          "type": "string"
+        },
+        "short": {
+          "description": "Property short description",
+          "type": "string"
+        },
+        "seokeywords": {
+          "description": "Property SEO/Keywords",
+          "type": "string"
+        },
+        "seodescription": {
+          "description": "Property SEO/Description",
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyLocationList": {
+      "type": "object",
+      "properties": {
+        "Country": {
+          "type": "string"
+        },
+        "Region": {
+          "type": "string"
+        },
+        "City": {
+          "type": "string"
+        },
+        "Locality": {
+          "type": "string"
+        },
+        "Description": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.PropertyLocationDescription"
+          }
+        },
+        "InnerLocation": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocation"
+        },
+        "coordinates": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.Coordinates",
+          "description": ""
+        },
+        "countryCode": {
+          "enum": [
+            "pt",
+            "es",
+            "fr",
+            "it",
+            "pa",
+            "br"
+          ],
+          "type": "string"
+        },
+        "locationId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "zone": {
+          "type": "string"
+        },
+        "address": {
+          "type": "string"
+        },
+        "zipcode": {
+          "type": "string"
+        },
+        "regionName": {
+          "type": "string"
+        },
+        "cityName": {
+          "type": "string"
+        },
+        "localityName": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.ListingAgent": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Name": {
+          "type": "string"
+        },
+        "Email": {
+          "type": "string"
+        },
+        "Phone": {
+          "type": "string"
+        },
+        "Cellphone": {
+          "type": "string"
+        },
+        "Photo": {
+          "type": "string"
+        },
+        "Locale": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.AgentLocale"
+          }
+        },
+        "Active": {
+          "type": "boolean"
+        },
+        "IsPrimaryAgent": {
+          "type": "boolean"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.DetailsObjects": {
+      "type": "object",
+      "properties": {
+        "Name": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "CategoryInnerText": {
+          "type": "string"
+        },
+        "CategoryId": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyButtons": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        },
+        "backgroundColor": {
+          "type": "string"
+        },
+        "foregroundColor": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.PropertyLocationDescription": {
+      "type": "object",
+      "properties": {
+        "Title": {
+          "type": "string"
+        },
+        "Text": {
+          "type": "string"
+        },
+        "Language": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.InnerLocation": {
+      "type": "object",
+      "properties": {
+        "CountryId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "RegionId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "LocalityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Zonename": {
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.AgentLocale": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "description": "",
+          "type": "string"
+        },
+        "title": {
+          "description": "Property title",
+          "type": "string"
+        },
+        "description": {
+          "description": "Property description",
+          "type": "string"
+        },
+        "short": {
+          "description": "Property short description",
+          "type": "string"
+        },
+        "seokeywords": {
+          "description": "Property SEO/Keywords",
+          "type": "string"
+        },
+        "seodescription": {
+          "description": "Property SEO/Description",
+          "type": "string"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.LocationRq": {
+      "type": "object",
+      "properties": {
+        "CountryCode": {
+          "enum": [
+            "pt",
+            "es",
+            "fr",
+            "it",
+            "pa",
+            "br"
+          ],
+          "type": "string"
+        },
+        "ParentId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "ActiveType": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "Level": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.LocationRs": {
+      "type": "object",
+      "properties": {
+        "Locations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.LocationHierarchyElement"
+          }
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.LocationHierarchyElement": {
+      "description": "Property Location (CASAFARI)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "parent_id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "level": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.InnerLocationRs": {
+      "type": "object",
+      "properties": {
+        "Countries": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocationsElement"
+          }
+        },
+        "Regions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocationsElement"
+          }
+        },
+        "Cities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocationsElement"
+          }
+        },
+        "Localities": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocationsElement"
+          }
+        },
+        "Zones": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Property.InnerLocationsElement"
+          }
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.InnerLocationsElement": {
+      "description": "Property Location (CASAFARI)",
+      "type": "object",
+      "properties": {
+        "id": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "cityId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "regionId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "countryId": {
+          "format": "int32",
+          "type": "integer"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.HitRq": {
+      "type": "object",
+      "properties": {
+        "Ip": {
+          "type": "string"
+        },
+        "PropertyId": {
+          "format": "int32",
+          "type": "integer"
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    },
+    "Casafari.Crm.Api.Dtos.Property.HitRs": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "boolean"
+        },
+        "Success": {
+          "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Success",
+          "description": "Indicates that comunication request was ok. This tag when exists make tag Error to be null"
+        },
+        "Errors": {
+          "description": "This tag inform client that the system cannot handle the request because some error",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Error"
+          }
+        },
+        "Warnings": {
+          "description": "This tag indicates that the request can be:\r\nRequest ok with warnings: Exitis tag Success and Warnings\r\nRequest not ok because bad request: Tag success null and tag warnigs with all warnings",
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/Casafari.Crm.Api.Dtos.Warning"
+          }
+        },
+        "CorrelationId": {
+          "description": "Allows end-to-end correlation of log messages with the corresponding Web service message throughout the processing of the Web service message.",
+          "type": "string"
+        },
+        "EchoToken": {
+          "description": "A reference for additional message identification, assigned by the requesting host system.",
+          "type": "string"
+        },
+        "PrimaryLangId": {
+          "format": "int32",
+          "description": "The primary language preference for the message encoded as ISO 639-3.",
+          "type": "integer"
+        },
+        "RetransmissionIndicator": {
+          "description": "When true, indicates the message is being re-sent after a failure.",
+          "type": "boolean"
+        },
+        "TimeStamp": {
+          "description": "ISO 8601 encoded timestamp indicating the creation date and time of the message.\r\nFormat: yyyy-MM-ddThh:mm:ssZ - UTC\r\nExample: 2019-08-09T08:12:10+00:00",
+          "type": "string"
+        },
+        "Version": {
+          "format": "double",
+          "description": "The message version indicated by a decimal value.",
+          "type": "number"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,22 @@
+/**
+ * Gateway module exports.
+ *
+ * Re-exports the core pieces needed to wire the DeepAgent to
+ * messaging platforms (Telegram, WhatsApp, etc.).
+ */
+
+export { Gateway } from "./gateway.js";
+export { SessionStore } from "./session.js";
+export { platformRegistry } from "./registry.js";
+export { BasePlatformAdapter } from "./platforms/base.js";
+export { TelegramAdapter } from "./platforms/telegram.js";
+export { WhatsAppAdapter } from "./platforms/whatsapp.js";
+
+export type {
+  Platform,
+  PlatformConfig,
+  GatewayConfig,
+  MessageEvent,
+  Attachment,
+  SendOptions,
+} from "./types.js";
