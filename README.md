@@ -28,6 +28,47 @@ Inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent), this p
    npm run dev
    ```
 
+## Deploying with Coolify
+
+This repository includes a production `Dockerfile` and a
+`docker-compose.yml` configured for Coolify. The gateway is a background
+worker that uses Telegram long polling and/or a WhatsApp WebSocket connection,
+so it does not need a public domain or an exposed port.
+
+### Create the Coolify resource
+
+1. Push the repository to a private Git repository.
+2. In Coolify, connect the repository with the GitHub App integration.
+3. Create a new resource from the repository and select the `Docker Compose`
+   build pack.
+4. Use `/docker-compose.yml` as the Compose file and leave domains empty.
+5. Fill in the environment variables detected from the Compose file. At
+   minimum, set `LLM_PROVIDER`, `LLM_MODEL`, the matching provider API key,
+   CRM authentication, and either `TELEGRAM_BOT_TOKEN` or
+   `WHATSAPP_ENABLED=true`.
+6. Keep API keys as runtime-only variables; they are not needed during the
+   image build.
+7. Enable **Auto Deploy** under the resource's advanced settings and deploy.
+
+The image runs the test suite and TypeScript build before a deployment can
+start. A failed test or build therefore leaves the previous deployment
+running.
+
+For WhatsApp, open the first deployment's runtime logs and scan the pairing QR
+code. The `whatsapp-auth` volume preserves that pairing across deployments.
+Generated PDFs are temporary container files because the gateway uploads them
+to Telegram or WhatsApp immediately.
+
+Do not commit `.env` or `.whatsapp-auth`. If `.env` was previously committed,
+remove it from Git tracking with:
+
+```bash
+git rm --cached .env
+```
+
+If credentials were pushed to a remote repository, rotate them before
+deploying.
+
 ## Subscription-Provider Pattern
 
 Instead of calling OpenAI or Anthropic directly, the agent routes through a **provider abstraction**:
