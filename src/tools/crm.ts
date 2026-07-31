@@ -5,6 +5,9 @@ import {
   callCrmApiWithPagination,
 } from "../client/crm-client.js";
 
+const LEADS_LIST_ENDPOINT = "/api/Leads/List";
+const DEFAULT_LEAD_RESULT_LIMIT = 20;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -24,7 +27,7 @@ function mergeFiltersIntoBody(
   body: Record<string, unknown> | undefined,
   filters: Record<string, unknown> | undefined
 ): Record<string, unknown> | undefined {
-  if (endpoint === "/api/Leads/List") {
+  if (endpoint === LEADS_LIST_ENDPOINT) {
     return {
       Language: "en",
       ...(body ?? {}),
@@ -61,6 +64,72 @@ function mergeFiltersIntoBody(
   }
 }
 
+type LeadSortField = "CreateDate" | "LastUpdate";
+type SortDirection = "asc" | "desc";
+
+interface LeadResultOptions {
+  resultLimit?: number;
+  resultSortBy?: LeadSortField;
+  resultSortDirection?: SortDirection;
+}
+
+function compareLeadDates(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+  field: LeadSortField,
+  direction: SortDirection
+): number {
+  const leftTime =
+    typeof left[field] === "string" ? Date.parse(left[field]) : Number.NaN;
+  const rightTime =
+    typeof right[field] === "string" ? Date.parse(right[field]) : Number.NaN;
+  const leftIsValid = Number.isFinite(leftTime);
+  const rightIsValid = Number.isFinite(rightTime);
+
+  // Keep records without a usable date at the end in either direction.
+  if (!leftIsValid && !rightIsValid) return 0;
+  if (!leftIsValid) return 1;
+  if (!rightIsValid) return -1;
+
+  return direction === "asc" ? leftTime - rightTime : rightTime - leftTime;
+}
+
+/**
+ * The leads endpoint has no server-side pagination and can return several MB.
+ * Bound and order the result before it enters the model context.
+ */
+export function shapeLeadListResult(
+  data: unknown,
+  options: LeadResultOptions = {}
+): unknown {
+  if (!isRecord(data) || !Array.isArray(data.Opportunities)) {
+    return data;
+  }
+
+  const sortBy = options.resultSortBy ?? "CreateDate";
+  const sortDirection = options.resultSortDirection ?? "desc";
+  const limit = options.resultLimit ?? DEFAULT_LEAD_RESULT_LIMIT;
+  const opportunities = data.Opportunities.filter(isRecord);
+  const selected = [...opportunities]
+    .sort((left, right) =>
+      compareLeadDates(left, right, sortBy, sortDirection)
+    )
+    .slice(0, limit);
+
+  return {
+    ...data,
+    Opportunities: selected,
+    _result: {
+      totalRecords: opportunities.length,
+      returnedRecords: selected.length,
+      limit,
+      sortBy,
+      sortDirection,
+      truncated: selected.length < opportunities.length,
+    },
+  };
+}
+
 /**
  * Single tool that exposes the entire Proppy CRM API to the agent.
  *
@@ -91,6 +160,9 @@ export const callCrmApiTool = tool(
     autoPaginate,
     pageSize,
     maxPages,
+    resultLimit,
+    resultSortBy,
+    resultSortDirection,
   }) => {
     const requestBody = mergeFiltersIntoBody(endpoint, body, filters);
     const request = {
@@ -106,7 +178,16 @@ export const callCrmApiTool = tool(
           ? await callCrmApiWithPagination(request, { pageSize, maxPages })
           : await callCrmApi(request);
 
-      return JSON.stringify(response.data);
+      const responseData =
+        endpoint === LEADS_LIST_ENDPOINT
+          ? shapeLeadListResult(response.data, {
+              resultLimit,
+              resultSortBy,
+              resultSortDirection,
+            })
+          : response.data;
+
+      return JSON.stringify(responseData);
     } catch (error) {
       return JSON.stringify({
         _error: true,
@@ -145,6 +226,7 @@ export const callCrmApiTool = tool(
       "Supported paginated list endpoints are automatically fetched across all pages by default: /api/Agency/GetAgencies, /api/Entity/GetAgents, /api/Entity/GetOwnerlinks, and /api/Property/ListProperties. " +
       "For properties, filters include Reference, PropertyIds, BusinessTypeIds, PropertyTypeIds, Locations, PriceFrom, PriceTo, MinBedrooms, MaxBedrooms, Active, VisibleOnWebsite, Sold, AgentId, AgencyId, FreeText, and related FilterRq fields. " +
       "For leads, filters include StartDate, EndDate, Category, OriginId, and Language; the API spec does not expose pagination for /api/Leads/List. " +
+      "Lead-list results are sorted by CreateDate descending and limited to 20 records by default because the API returns its entire history. Use resultLimit (maximum 100) to request a different bounded count, resultSortBy to sort by CreateDate or LastUpdate, and resultSortDirection for newest/oldest ordering. The _result metadata reports the full matching count and whether the returned records were truncated. " +
       "For GET requests, provide query parameters in 'queryParams'.",
     schema: z.object({
       endpoint: z
@@ -190,6 +272,27 @@ export const callCrmApiTool = tool(
         .optional()
         .describe(
           "Safety cap for auto-pagination. Defaults to 100 pages; increase only when the user explicitly needs more."
+        ),
+      resultLimit: z
+        .number()
+        .int()
+        .positive()
+        .max(100)
+        .optional()
+        .describe(
+          "Maximum lead records returned to the model for /api/Leads/List. Defaults to 20."
+        ),
+      resultSortBy: z
+        .enum(["CreateDate", "LastUpdate"])
+        .optional()
+        .describe(
+          "Lead-list date field used for ordering. Defaults to CreateDate."
+        ),
+      resultSortDirection: z
+        .enum(["asc", "desc"])
+        .optional()
+        .describe(
+          "Lead-list order: desc returns the newest records first (default); asc returns the oldest first."
         ),
     }),
   }

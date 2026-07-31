@@ -238,7 +238,12 @@ Supported paginated list endpoints are auto-paginated by default and return one 
 - `/api/Entity/GetOwnerlinks` via `PagingRq.Current` / `PagingRq.ResultsPerPage`
 - `/api/Property/ListProperties` via `SequenceNmbr` / `MaxResponses`
 
-`/api/Leads/List` supports filters, but the API spec does not expose pagination fields for that endpoint.
+`/api/Leads/List` supports filters, but the API spec does not expose pagination
+fields for that endpoint. Because an unfiltered response contains the complete
+lead history, the tool sorts lead results by `CreateDate` descending and returns
+the newest 20 by default. Use `resultLimit` (up to 100), `resultSortBy`, and
+`resultSortDirection` to change that bounded result. The returned `_result`
+metadata includes the full matching count and whether records were truncated.
 
 ## Authentication
 
