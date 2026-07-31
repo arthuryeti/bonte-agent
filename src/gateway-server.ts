@@ -1,9 +1,8 @@
 import "dotenv/config";
-import { createDeepAgent } from "deepagents";
-import { createModel } from "./providers/factory.js";
-import { callCrmApiTool } from "./tools/crm.js";
+import { createCrmAgent } from "./agent.js";
 import { Gateway } from "./gateway/gateway.js";
 import type { GatewayConfig } from "./gateway/types.js";
+import { describeResolvedProvider } from "./providers/factory.js";
 
 /**
  * Gateway server entry point.
@@ -33,6 +32,8 @@ function buildConfig(): GatewayConfig {
           ? process.env.TELEGRAM_ALLOWED_USERS.split(",").map((s) => s.trim())
           : undefined,
         requireMention: process.env.TELEGRAM_REQUIRE_MENTION === "true",
+        typingIndicator: process.env.TELEGRAM_TYPING_INDICATOR !== "false",
+        streamUpdates: process.env.TELEGRAM_STREAM_UPDATES !== "false",
       },
     });
   }
@@ -73,20 +74,8 @@ async function main() {
     process.exit(1);
   }
 
-  const model = createModel();
-
-  const agent = createDeepAgent({
-    model,
-    tools: [callCrmApiTool],
-    systemPrompt:
-      "You are a helpful CRM assistant reachable via Telegram and WhatsApp. " +
-      "You have access to the Proppy CRM API. " +
-      "When the user asks about agencies, agents, leads, properties, or code tables, " +
-      "use the call_crm_api tool to fetch or mutate data. " +
-      "When listing CRM resources, pass the user's criteria in the tool's filters field and keep autoPaginate enabled so all supported pages are fetched. " +
-      "Only disable autoPaginate when the user explicitly asks for a single page, a small sample, or a first-N preview. " +
-      "Keep responses concise and mobile-friendly.",
-  });
+  const agent = createCrmAgent("gateway");
+  console.log(`[LLM] ${describeResolvedProvider()}`);
 
   const gateway = new Gateway(agent, config);
   await gateway.start();

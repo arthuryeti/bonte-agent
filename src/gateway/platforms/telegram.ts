@@ -5,9 +5,15 @@
  * a TypeScript/Node.js environment.
  */
 
-import { Bot, Context } from "grammy";
+import fs from "node:fs";
+import { Bot, Context, InputFile } from "grammy";
 import { BasePlatformAdapter } from "./base.js";
-import type { MessageEvent, SendOptions } from "../types.js";
+import type {
+  MessageEvent,
+  SendDocumentOptions,
+  SendOptions,
+  SentMessageRef,
+} from "../types.js";
 
 const MARKDOWN_V2_ESCAPE_RE = /([_*\[\]()~`>#+\-=|{}.!\\])/g;
 
@@ -29,6 +35,8 @@ export interface TelegramConfig {
   botToken: string;
   allowedUsers?: string[]; // comma-separated user IDs
   requireMention?: boolean;
+  typingIndicator?: boolean;
+  streamUpdates?: boolean;
 }
 
 export class TelegramAdapter extends BasePlatformAdapter {
@@ -158,6 +166,106 @@ export class TelegramAdapter extends BasePlatformAdapter {
     }
   }
 
+  supportsMessageUpdates(): boolean {
+    return this.config.streamUpdates !== false;
+  }
+
+  async sendChatAction(chatId: string, action = "typing"): Promise<void> {
+    if (this.config.typingIndicator === false) return;
+    await this.bot.api.sendChatAction(chatId, action as "typing");
+  }
+
+  async sendMessageUpdate(
+    chatId: string,
+    text: string,
+    options?: SendOptions,
+    ref?: SentMessageRef
+  ): Promise<SentMessageRef | undefined> {
+    if (!this.supportsMessageUpdates()) {
+      return super.sendMessageUpdate(chatId, text, options, ref);
+    }
+
+    const parseMode = this.toTelegramParseMode(options?.parseMode);
+    const formattedText =
+      parseMode === "MarkdownV2" ? this.formatMarkdownV2(text) : text;
+    const messageText = formattedText.slice(0, 4096);
+
+    if (!ref) {
+      const payload = {
+        parse_mode: parseMode,
+        reply_parameters: options?.replyTo
+          ? { message_id: parseInt(options.replyTo, 10) }
+          : undefined,
+      };
+
+      try {
+        const sent = await this.bot.api.sendMessage(chatId, messageText, payload);
+        return {
+          chatId,
+          messageId: sent.message_id.toString(),
+        };
+      } catch (err) {
+        if (parseMode !== "MarkdownV2" || !this.isMarkdownParseError(err)) {
+          throw err;
+        }
+
+        const sent = await this.bot.api.sendMessage(
+          chatId,
+          stripMarkdownV2(messageText),
+          {
+            ...payload,
+            parse_mode: undefined,
+          }
+        );
+        return {
+          chatId,
+          messageId: sent.message_id.toString(),
+        };
+      }
+    }
+
+    const messageId = parseInt(ref.messageId, 10);
+    try {
+      await this.bot.api.editMessageText(chatId, messageId, messageText, {
+        parse_mode: parseMode,
+      });
+    } catch (err) {
+      if (this.isUnchangedMessageError(err)) return ref;
+      if (parseMode !== "MarkdownV2" || !this.isMarkdownParseError(err)) {
+        throw err;
+      }
+
+      await this.bot.api.editMessageText(
+        chatId,
+        messageId,
+        stripMarkdownV2(messageText)
+      );
+    }
+
+    return ref;
+  }
+
+  async sendDocument(
+    chatId: string,
+    filePath: string,
+    options?: SendDocumentOptions
+  ): Promise<void> {
+    if (!fs.existsSync(filePath)) {
+      await super.sendDocument(chatId, filePath, {
+        ...options,
+        caption: "The generated file could not be attached.",
+      });
+      return;
+    }
+
+    await this.bot.api.sendDocument(chatId, new InputFile(filePath, options?.fileName), {
+      caption: options?.caption?.slice(0, 1024),
+      reply_parameters: options?.replyTo
+        ? { message_id: parseInt(options.replyTo, 10) }
+        : undefined,
+    });
+  }
+
   private toTelegramParseMode(
     parseMode?: SendOptions["parseMode"]
   ): "MarkdownV2" | "HTML" | undefined {
@@ -231,6 +339,11 @@ export class TelegramAdapter extends BasePlatformAdapter {
   private isMarkdownParseError(err: unknown): boolean {
     const message = err instanceof Error ? err.message : String(err);
     return /parse|markdown|entity/i.test(message);
+  }
+
+  private isUnchangedMessageError(err: unknown): boolean {
+    const message = err instanceof Error ? err.message : String(err);
+    return /message is not modified/i.test(message);
   }
 
   private chunkText(text: string, maxLength: number): string[] {

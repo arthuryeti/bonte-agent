@@ -45,6 +45,22 @@ export interface SendOptions {
   parseMode?: "markdown" | "html" | "plain";
 }
 
+export interface SentMessageRef {
+  /** Chat / group / channel ID */
+  chatId: string;
+  /** Platform-specific message ID */
+  messageId: string;
+}
+
+export interface SendDocumentOptions extends SendOptions {
+  /** Caption to send with the document when the platform supports it */
+  caption?: string;
+  /** Display filename for the uploaded document */
+  fileName?: string;
+  /** MIME type for the uploaded document */
+  mimeType?: string;
+}
+
 export interface PlatformConfig {
   /** Is this platform enabled? */
   enabled: boolean;

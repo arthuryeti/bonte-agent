@@ -11,7 +11,13 @@
  */
 
 import { BasePlatformAdapter } from "./base.js";
-import type { MessageEvent, SendOptions } from "../types.js";
+import fs from "node:fs";
+import path from "node:path";
+import type {
+  MessageEvent,
+  SendDocumentOptions,
+  SendOptions,
+} from "../types.js";
 
 export interface WhatsAppConfig {
   /** Directory to store auth state (default: .whatsapp-auth) */
@@ -178,6 +184,30 @@ export class WhatsAppAdapter extends BasePlatformAdapter {
     for (const chunk of chunks) {
       await this.sock.sendMessage(chatId, { text: chunk });
     }
+  }
+
+  async sendDocument(
+    chatId: string,
+    filePath: string,
+    options?: SendDocumentOptions
+  ): Promise<void> {
+    if (!this.sock) throw new Error("WhatsApp not connected");
+
+    if (!fs.existsSync(filePath)) {
+      await super.sendDocument(chatId, filePath, {
+        ...options,
+        caption: "The generated file could not be attached.",
+      });
+      return;
+    }
+
+    const fileName = options?.fileName || path.basename(filePath);
+    await this.sock.sendMessage(chatId, {
+      document: fs.readFileSync(filePath),
+      fileName,
+      mimetype: options?.mimeType || "application/pdf",
+      caption: options?.caption,
+    });
   }
 
   private chunkText(text: string, maxLength: number): string[] {

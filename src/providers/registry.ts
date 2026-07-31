@@ -1,4 +1,75 @@
-import type { ProviderConfig } from "./types.js";
+import type {
+  ProviderConfig,
+  ProviderRuntimeContext,
+  ProviderRuntimeOverrides,
+} from "./types.js";
+
+export const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding";
+
+function isKimiCodeBaseUrl(baseUrl: string): boolean {
+  try {
+    const url = new URL(baseUrl);
+    const path = url.pathname.replace(/\/+$/, "");
+    return (
+      url.protocol === "https:" &&
+      url.hostname.toLowerCase() === "api.kimi.com" &&
+      (url.port === "" || url.port === "443") &&
+      (path === "/coding" || path === "/coding/v1") &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+function resolveKimiRuntime({
+  apiKey,
+  baseUrlOverride,
+}: ProviderRuntimeContext): ProviderRuntimeOverrides {
+  const baseUrl =
+    baseUrlOverride ||
+    (apiKey.startsWith("sk-kimi-")
+      ? KIMI_CODE_BASE_URL
+      : "https://api.moonshot.ai/v1");
+
+  if (isKimiCodeBaseUrl(baseUrl)) {
+    return {
+      // The Anthropic SDK appends /v1/messages, so its base URL must not
+      // retain the OpenAI-compatible /v1 suffix.
+      baseUrl: KIMI_CODE_BASE_URL,
+      transport: "anthropic_messages",
+      defaultModel: "k3",
+    };
+  }
+
+  return {
+    baseUrl,
+    transport: "openai_chat",
+    defaultModel: "kimi-k2-latest",
+  };
+}
+
+const kimiCodingProvider: ProviderConfig = {
+  name: "kimi-coding",
+  displayName: "Kimi / Kimi Coding Plan",
+  transport: "openai_chat",
+  isAggregator: false,
+  baseUrl: "https://api.moonshot.ai/v1",
+  apiKeyEnvVar: "KIMI_API_KEY",
+  apiKeyEnvVarAliases: ["KIMI_CODING_API_KEY"],
+  baseUrlEnvVar: "KIMI_BASE_URL",
+  extraHeaders: {
+    "User-Agent": "crm-deepagent/0.1.0",
+  },
+  defaultModel: "kimi-k2-latest",
+  maxTokens: 32_000,
+  omitTemperature: true,
+  streaming: true,
+  resolveRuntime: resolveKimiRuntime,
+};
 
 /**
  * Provider registry — single source of truth for supported LLM providers.
@@ -127,16 +198,9 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     defaultModel: "GLM-4.5-air",
   },
 
-  kimi: {
-    name: "kimi",
-    displayName: "Kimi (Moonshot AI)",
-    transport: "openai_chat",
-    isAggregator: false,
-    baseUrl: "https://api.moonshot.ai/v1",
-    apiKeyEnvVar: "KIMI_API_KEY",
-    baseUrlEnvVar: "KIMI_BASE_URL",
-    defaultModel: "kimi-k2-latest",
-  },
+  "kimi-coding": kimiCodingProvider,
+  kimi: kimiCodingProvider,
+  moonshot: kimiCodingProvider,
 };
 
 /** List of aggregator provider names. */

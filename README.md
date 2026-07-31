@@ -35,7 +35,7 @@ Instead of calling OpenAI or Anthropic directly, the agent routes through a **pr
 | Type | Providers | What you get |
 |------|-----------|--------------|
 | **Aggregators** | `openrouter`, `together`, `nous`, `huggingface` | One API key → 200+ models. Switch models by changing `LLM_MODEL`. |
-| **Direct** | `openai`, `anthropic`, `deepseek`, `groq`, `ollama`, `zai`, `kimi` | Talk straight to the vendor's API. |
+| **Direct** | `openai`, `anthropic`, `deepseek`, `groq`, `ollama`, `zai`, `kimi-coding` (`kimi` / `moonshot` aliases) | Talk straight to the vendor's API. |
 
 ### Switching providers
 
@@ -72,11 +72,18 @@ LLM_PROVIDER=zai
 LLM_MODEL=GLM-5.1
 ZAI_API_KEY=...
 
-# Kimi (Moonshot AI)
-LLM_PROVIDER=kimi
-LLM_MODEL=kimi-k2-latest
+# Kimi Coding Plan / Kimi K3
+LLM_PROVIDER=kimi-coding
+LLM_MODEL=k3
 KIMI_API_KEY=...
 ```
+
+Kimi Code keys beginning with `sk-kimi-` automatically use the
+Anthropic-compatible `https://api.kimi.com/coding` endpoint. The provider
+defaults to `k3`, omits `temperature`, and accepts `KIMI_CODING_API_KEY` as an
+alias. Legacy Moonshot keys continue to use the OpenAI-compatible
+`https://api.moonshot.ai/v1` endpoint and default to `kimi-k2-latest`.
+`KIMI_BASE_URL` always takes precedence over automatic endpoint selection.
 
 ### How it works
 
@@ -113,6 +120,10 @@ src/
       whatsapp.ts       # WhatsApp adapter (Baileys)
   tools/
     crm.ts              # LangChain tool wrapping the CRM API
+    property-pdf.ts     # Tool that generates branded property PDF brochures
+  pdf/
+    property-data.ts    # Normalizes CRM property records for PDF rendering
+    render-property-pdf.ts # PDFKit-based brochure renderer
   client/
     crm-client.ts       # Thin fetch-based HTTP client
 ```
@@ -154,6 +165,8 @@ Set the platform-specific env vars in `.env`:
 TELEGRAM_BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 TELEGRAM_ALLOWED_USERS=123456789,987654321  # optional
 TELEGRAM_REQUIRE_MENTION=true               # optional (groups only)
+TELEGRAM_TYPING_INDICATOR=true              # optional, defaults to true
+TELEGRAM_STREAM_UPDATES=true                # optional, defaults to true
 
 # WhatsApp — enables Baileys WebSocket connection
 WHATSAPP_ENABLED=true
@@ -197,6 +210,48 @@ The CRM client supports three auth methods (configure in `.env`):
 - **API Key**: `CRM_API_KEY` → sent as `X-API-Key` header
 - **Basic Auth**: `CRM_USERNAME` + `CRM_PASSWORD`
 - **Bearer Token**: `CRM_BEARER_TOKEN`
+
+## Property PDF Brochures
+
+The agent includes a `generate_property_pdf` tool. Ask for a property PDF by
+reference or CRM property ID, for example:
+
+```bash
+npm run dev -- "Generate a PDF brochure for property ABC123"
+```
+
+The tool fetches the listing from `/api/Property/ListProperties`, normalizes
+title, description, facts, features, agent details, and photos, asks the
+configured LLM to write the brochure hook and short intro, then writes a
+branded PDF to `output/pdf/property-<reference>.pdf`. If the LLM copy call
+fails, the tool falls back to conservative copy from the listing data so PDF
+generation still completes.
+
+Optional brand configuration:
+
+```bash
+PROPERTY_PDF_BRAND_NAME=Bonte
+PROPERTY_PDF_LOGO_PATH=/absolute/path/to/logo.png
+PROPERTY_PDF_PRIMARY_COLOR=#173f38
+PROPERTY_PDF_ACCENT_COLOR=#c7a76c
+```
+
+In the messaging gateway, the agent emits a `MEDIA:/absolute/path.pdf` marker
+after generation. The gateway strips that marker from visible text and uploads
+the PDF as a native Telegram or WhatsApp document.
+
+## Broker Reminder Sub-Agent
+
+The CRM agent includes a DeepAgents sub-agent named `broker-reminder-agent`.
+It is used for broker follow-up and reminder analysis. The sub-agent can inspect
+CRM records through `call_crm_api` and draft reminder messages, but it does not
+send messages or mutate CRM data.
+
+Example:
+
+```bash
+npm run dev -- "Check if any brokers need reminders for leads from the last 7 days and draft the messages"
+```
 
 ## Available CRM Endpoints
 

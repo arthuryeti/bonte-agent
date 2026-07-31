@@ -5,7 +5,14 @@
  * and implements the lifecycle and send methods.
  */
 
-import type { MessageEvent, Platform, SendOptions } from "../types.js";
+import path from "node:path";
+import type {
+  MessageEvent,
+  Platform,
+  SendDocumentOptions,
+  SendOptions,
+  SentMessageRef,
+} from "../types.js";
 
 export type MessageHandler = (event: MessageEvent) => Promise<void>;
 
@@ -38,6 +45,41 @@ export abstract class BasePlatformAdapter {
     text: string,
     options?: SendOptions
   ): Promise<void>;
+
+  /** Whether this adapter can edit a previously sent text message. */
+  supportsMessageUpdates(): boolean {
+    return false;
+  }
+
+  /** Show a short-lived platform action, such as Telegram's typing indicator. */
+  async sendChatAction(_chatId: string, _action = "typing"): Promise<void> {
+    // Not all platforms expose chat actions.
+  }
+
+  /** Send a new live message or update an existing one. */
+  async sendMessageUpdate(
+    chatId: string,
+    text: string,
+    options?: SendOptions,
+    ref?: SentMessageRef
+  ): Promise<SentMessageRef | undefined> {
+    if (ref) return ref;
+    await this.sendMessage(chatId, text, options);
+    return undefined;
+  }
+
+  /** Send a local file as a downloadable document when the platform supports it. */
+  async sendDocument(
+    chatId: string,
+    filePath: string,
+    options?: SendDocumentOptions
+  ): Promise<void> {
+    const fileName = options?.fileName || path.basename(filePath);
+    const text = [options?.caption, `File ready: ${fileName}`]
+      .filter(Boolean)
+      .join("\n");
+    await this.sendMessage(chatId, text, options);
+  }
 
   /** Health check — is the adapter currently connected? */
   abstract isConnected(): boolean;

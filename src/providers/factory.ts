@@ -2,7 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { PROVIDER_REGISTRY } from "./registry.js";
-import type { ProviderConfig, ResolvedProvider } from "./types.js";
+import type { ResolvedProvider } from "./types.js";
 
 /**
  * Resolve a provider from environment variables.
@@ -29,20 +29,45 @@ export function resolveProvider(): ResolvedProvider {
     );
   }
 
-  const apiKey = process.env[config.apiKeyEnvVar];
+  const apiKeyEnvVars = [
+    config.apiKeyEnvVar,
+    ...(config.apiKeyEnvVarAliases ?? []),
+  ];
+  const apiKey = apiKeyEnvVars
+    .map((envVar) => process.env[envVar])
+    .find((value): value is string => Boolean(value));
   if (!apiKey) {
     throw new Error(
-      `Provider "${providerName}" requires API key in env var ${config.apiKeyEnvVar}`
+      `Provider "${providerName}" requires API key in env var ${apiKeyEnvVars.join(" or ")}`
     );
   }
 
-  const baseUrl =
-    (config.baseUrlEnvVar && process.env[config.baseUrlEnvVar]) ||
-    config.baseUrl;
+  const baseUrlOverride =
+    config.baseUrlEnvVar && process.env[config.baseUrlEnvVar]
+      ? process.env[config.baseUrlEnvVar]
+      : undefined;
+  const runtime = config.resolveRuntime?.({ apiKey, baseUrlOverride });
+  const baseUrl = runtime?.baseUrl ?? baseUrlOverride ?? config.baseUrl;
+  const transport = runtime?.transport ?? config.transport;
 
-  const model = process.env.LLM_MODEL ?? config.defaultModel ?? "";
+  const model =
+    process.env.LLM_MODEL ??
+    runtime?.defaultModel ??
+    config.defaultModel ??
+    "";
 
-  return { config, apiKey, baseUrl, model };
+  return { config, apiKey, baseUrl, model, transport };
+}
+
+export function describeResolvedProvider(
+  resolved: ResolvedProvider = resolveProvider()
+): string {
+  return [
+    `provider=${resolved.config.name}`,
+    `model=${resolved.model}`,
+    `transport=${resolved.transport}`,
+    `baseURL=${resolved.baseUrl}`,
+  ].join(" ");
 }
 
 /**
@@ -52,18 +77,24 @@ export function resolveProvider(): ResolvedProvider {
  * one factory, many backends, zero code changes when switching.
  */
 export function createLanguageModel(resolved?: ResolvedProvider): BaseLanguageModel {
-  const { config, apiKey, baseUrl, model } = resolved ?? resolveProvider();
+  const { config, apiKey, baseUrl, model, transport } =
+    resolved ?? resolveProvider();
+  const temperature = config.omitTemperature
+    ? {}
+    : { temperature: 0.2 };
 
-  switch (config.transport) {
+  switch (transport) {
     case "openai_chat": {
       return new ChatOpenAI({
         model,
         apiKey,
+        maxTokens: config.maxTokens,
+        streaming: config.streaming,
         configuration: {
           baseURL: baseUrl,
           defaultHeaders: config.extraHeaders,
         },
-        temperature: 0.2,
+        ...temperature,
       });
     }
 
@@ -72,13 +103,18 @@ export function createLanguageModel(resolved?: ResolvedProvider): BaseLanguageMo
         model,
         apiKey,
         anthropicApiUrl: baseUrl,
-        temperature: 0.2,
+        maxTokens: config.maxTokens,
+        streaming: config.streaming,
+        clientOptions: {
+          defaultHeaders: config.extraHeaders,
+        },
+        ...temperature,
       });
     }
 
     default:
       throw new Error(
-        `Unsupported transport "${(config as ProviderConfig).transport}" for provider "${config.name}"`
+        `Unsupported transport "${transport satisfies never}" for provider "${config.name}"`
       );
   }
 }

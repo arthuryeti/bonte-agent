@@ -1,7 +1,6 @@
 import "dotenv/config";
-import { createDeepAgent } from "deepagents";
-import { createModel } from "./providers/factory.js";
-import { callCrmApiTool } from "./tools/crm.js";
+import { createCrmAgent } from "./agent.js";
+import { extractLastAssistantText } from "./agent-response.js";
 
 /**
  * DeepAgent wired to the Proppy CRM API via a subscription-provider layer.
@@ -22,20 +21,7 @@ import { callCrmApiTool } from "./tools/crm.js";
  *  - CRM_BEARER_TOKEN  (optional bearer token)
  */
 
-const model = createModel();
-
-const agent = createDeepAgent({
-  model,
-  tools: [callCrmApiTool],
-  systemPrompt:
-    "You are a helpful CRM assistant. " +
-    "You have access to the Proppy CRM API. " +
-    "When the user asks about agencies, agents, leads, properties, or code tables, " +
-    "use the call_crm_api tool to fetch or mutate data. " +
-    "When listing CRM resources, pass the user's criteria in the tool's filters field and keep autoPaginate enabled so all supported pages are fetched. " +
-    "Only disable autoPaginate when the user explicitly asks for a single page, a small sample, or a first-N preview. " +
-    "Always confirm destructive actions (like deleting a property or user) with the user before proceeding.",
-});
+const agent = createCrmAgent("cli");
 
 async function main() {
   const query =
@@ -49,7 +35,9 @@ async function main() {
   });
 
   console.log("\n🤖 Agent response:\n");
-  console.log(result);
+  console.log(
+    extractLastAssistantText(result) || "The agent returned no text response."
+  );
 }
 
 main().catch((err) => {

@@ -13,6 +13,17 @@
 
 export type TransportType = "openai_chat" | "anthropic_messages";
 
+export interface ProviderRuntimeContext {
+  apiKey: string;
+  baseUrlOverride?: string;
+}
+
+export interface ProviderRuntimeOverrides {
+  baseUrl?: string;
+  transport?: TransportType;
+  defaultModel?: string;
+}
+
 export interface ProviderConfig {
   /** Unique provider key, e.g. "openrouter", "openai", "anthropic" */
   name: string;
@@ -26,12 +37,24 @@ export interface ProviderConfig {
   baseUrl: string;
   /** Env var that holds the API key */
   apiKeyEnvVar: string;
+  /** Additional env vars accepted for the same API key */
+  apiKeyEnvVarAliases?: readonly string[];
   /** Env var that can override baseUrl */
   baseUrlEnvVar?: string;
-  /** Extra headers to send with every request (for aggregators) */
+  /** Extra headers to send with every request */
   extraHeaders?: Record<string, string>;
   /** Default model when none is specified */
   defaultModel?: string;
+  /** Provider-specific maximum output tokens */
+  maxTokens?: number;
+  /** Some compatible APIs reject an explicit temperature */
+  omitTemperature?: boolean;
+  /** Always use the provider's streaming transport, aggregating for invoke() */
+  streaming?: boolean;
+  /** Resolve provider-specific endpoint, transport, or model defaults */
+  resolveRuntime?: (
+    context: ProviderRuntimeContext
+  ) => ProviderRuntimeOverrides;
 }
 
 export interface ResolvedProvider {
@@ -39,4 +62,5 @@ export interface ResolvedProvider {
   apiKey: string;
   baseUrl: string;
   model: string;
+  transport: TransportType;
 }

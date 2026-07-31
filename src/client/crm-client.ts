@@ -35,7 +35,8 @@ export interface CrmPaginatedResponse extends CrmResponse {
   };
 }
 
-const BASE_URL = "https://crmapi.proppydev.com";
+const BASE_URL = "https://crmapi.casafaricrm.com";
+// const BASE_URL = "https://crmapi.proppydev.com";
 
 type PaginationConfig =
   | {
