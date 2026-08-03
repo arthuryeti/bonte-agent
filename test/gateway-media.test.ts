@@ -194,4 +194,43 @@ describe("gateway document delivery", () => {
     assert.equal(adapter.documents[0].filePath, pdfPath);
     assert.equal(adapter.documents[0].options?.mimeType, "application/pdf");
   });
+
+  it("sends a visible fallback instead of silently dropping an empty agent reply", async () => {
+    const fakeAgent = {
+      async invoke() {
+        return {
+          messages: [{ role: "assistant", content: [] }],
+        };
+      },
+    } as unknown as DeepAgent;
+
+    const gateway = new Gateway(fakeAgent, { platforms: [] });
+    const adapter = new RecordingAdapter();
+    (
+      gateway as unknown as {
+        adapters: Map<string, BasePlatformAdapter>;
+      }
+    ).adapters.set("telegram", adapter);
+
+    const event: MessageEvent = {
+      id: "message-empty",
+      platform: "telegram",
+      chatId: "chat-1",
+      senderId: "user-1",
+      senderName: "Tester",
+      text: "Can you give me the last leads?",
+      timestamp: new Date(),
+      isGroup: false,
+    };
+
+    await (
+      gateway as unknown as {
+        handleMessage(message: MessageEvent): Promise<void>;
+      }
+    ).handleMessage(event);
+
+    assert.deepEqual(adapter.messages, [
+      "I couldn’t produce a usable response. Please try again; if this was a CRM request, check the CRM connection logs.",
+    ]);
+  });
 });

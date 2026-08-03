@@ -260,9 +260,11 @@ Supported paginated list endpoints are auto-paginated by default and return one 
 `/api/Leads/List` supports filters, but the API spec does not expose pagination
 fields for that endpoint. Because an unfiltered response contains the complete
 lead history, the tool sorts lead results by `CreateDate` descending and returns
-the newest 20 by default. Use `resultLimit` (up to 100), `resultSortBy`, and
-`resultSortDirection` to change that bounded result. The returned `_result`
-metadata includes the full matching count and whether records were truncated.
+compact summaries of the newest 20 by default. Use `resultLimit` (up to 100),
+`resultSortBy`, and `resultSortDirection` to change that bounded result. Set
+`resultDetail` to `full` only when complete nested event data is necessary. The
+returned `_result` metadata includes the full matching count, detail level, and
+whether records were truncated.
 
 ## Authentication
 
@@ -275,6 +277,12 @@ The CRM client supports three auth methods (configure in `.env`):
 - **API Key**: `CRM_API_KEY` → sent as `X-API-Key` header
 - **Basic Auth**: `CRM_USERNAME` + `CRM_PASSWORD`
 - **Bearer Token**: `CRM_BEARER_TOKEN`
+
+The production endpoint defaults to `https://crmapi.casafaricrm.com`. Override
+it with `CRM_BASE_URL` when using another CRM environment. Requests time out
+after 30 seconds by default; configure `CRM_TIMEOUT_MS` if needed. A Cloudflare
+403 means the deployment server's public IP must be allowed by the CRM's
+security configuration.
 
 ## Property PDF Brochures
 

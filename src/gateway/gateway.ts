@@ -323,6 +323,11 @@ export class Gateway {
         }
       }
 
+      if (!delivery.text.trim() && delivery.documents.length === 0) {
+        delivery.text =
+          "I couldn’t produce a usable response. Please try again; if this was a CRM request, check the CRM connection logs.";
+      }
+
       // Add assistant response to session
       this.sessions.addAssistantMessage(
         event.platform,

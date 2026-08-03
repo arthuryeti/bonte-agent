@@ -23,6 +23,7 @@ describe("CRM lead result shaping", () => {
       limit: 20,
       sortBy: "CreateDate",
       sortDirection: "desc",
+      detail: "summary",
       truncated: true,
     });
   });
@@ -59,8 +60,100 @@ describe("CRM lead result shaping", () => {
       limit: 2,
       sortBy: "LastUpdate",
       sortDirection: "asc",
+      detail: "summary",
       truncated: true,
     });
+  });
+
+  it("compacts nested lead history while retaining useful contact context", () => {
+    const result = shapeLeadListResult({
+      Opportunities: [
+        {
+          Id: "lead-1",
+          Title: "Viewing request",
+          CreateDate: "2026-08-03T10:00:00.000",
+          Description: "A very large internal description",
+          Agents: [{ AgentID: "agent-1", AgentName: "Alex", Secret: "omit" }],
+          Properties: [
+            {
+              PropertyID: "property-1",
+              Reference: "A444",
+              Address: "Lisbon",
+              Description: "omit",
+            },
+          ],
+          Customer: {
+            Name: "Customer",
+            EmailAddress: "customer@example.com",
+            IdentificationNumber: "omit",
+          },
+          Events: [
+            {
+              EventID: "old",
+              Title: "First contact",
+              StartDate: "2026-08-01T09:00:00.000",
+              Description: "omit",
+            },
+            {
+              EventID: "new",
+              Title: "Viewing",
+              StartDate: "2026-08-03T09:00:00.000",
+              Description: "omit",
+            },
+          ],
+        },
+      ],
+    }) as {
+      Opportunities: Array<Record<string, unknown>>;
+      _result: Record<string, unknown>;
+    };
+
+    const lead = result.Opportunities[0];
+    assert.equal(lead.Description, undefined);
+    assert.deepEqual(lead.Agents, [
+      { AgentID: "agent-1", AgentName: "Alex" },
+    ]);
+    assert.deepEqual(lead.Properties, [
+      { PropertyID: "property-1", Reference: "A444", Address: "Lisbon" },
+    ]);
+    assert.deepEqual(lead.Customer, {
+      Name: "Customer",
+      EmailAddress: "customer@example.com",
+    });
+    assert.deepEqual(lead.Events, [
+      {
+        EventID: "new",
+        Title: "Viewing",
+        StartDate: "2026-08-03T09:00:00.000",
+      },
+      {
+        EventID: "old",
+        Title: "First contact",
+        StartDate: "2026-08-01T09:00:00.000",
+      },
+    ]);
+    assert.equal(lead.EventCount, 2);
+    assert.equal(result._result.detail, "summary");
+  });
+
+  it("retains complete lead records when full detail is explicitly requested", () => {
+    const opportunity = {
+      Id: "lead-1",
+      CreateDate: "2026-08-03T10:00:00.000",
+      Description: "Keep this",
+      Events: [{ Description: "Keep this too" }],
+    };
+
+    const result = shapeLeadListResult(
+      { Opportunities: [opportunity] },
+      { resultDetail: "full" }
+    ) as {
+      Opportunities: Array<Record<string, unknown>>;
+      _result: Record<string, unknown>;
+    };
+
+    assert.deepEqual(result.Opportunities, [opportunity]);
+    assert.equal(result._result.detail, "full");
   });
 
   it("leaves non-lead-shaped responses unchanged", () => {

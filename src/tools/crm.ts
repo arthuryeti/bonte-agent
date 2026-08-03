@@ -66,11 +66,116 @@ function mergeFiltersIntoBody(
 
 type LeadSortField = "CreateDate" | "LastUpdate";
 type SortDirection = "asc" | "desc";
+type LeadResultDetail = "summary" | "full";
 
 interface LeadResultOptions {
   resultLimit?: number;
   resultSortBy?: LeadSortField;
   resultSortDirection?: SortDirection;
+  resultDetail?: LeadResultDetail;
+}
+
+function copyFields(
+  source: Record<string, unknown>,
+  fields: readonly string[]
+): Record<string, unknown> {
+  return Object.fromEntries(
+    fields
+      .filter((field) => source[field] !== undefined && source[field] !== null)
+      .map((field) => [field, source[field]])
+  );
+}
+
+function summarizeRecords(
+  value: unknown,
+  fields: readonly string[],
+  limit: number
+): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).slice(0, limit).map((item) => copyFields(item, fields));
+}
+
+function summarizeLead(lead: Record<string, unknown>): Record<string, unknown> {
+  const summary = copyFields(lead, [
+    "Id",
+    "Title",
+    "CurrentStatus",
+    "CreateDate",
+    "LastUpdate",
+    "Origin",
+    "Outcome",
+    "OutcomeDate",
+    "EventPriority",
+    "EventType",
+    "SalePrice",
+  ]);
+
+  const agents = Array.isArray(lead.Agents) ? lead.Agents.filter(isRecord) : [];
+  const properties = Array.isArray(lead.Properties)
+    ? lead.Properties.filter(isRecord)
+    : [];
+  const events = Array.isArray(lead.Events) ? lead.Events.filter(isRecord) : [];
+
+  if (agents.length > 0) {
+    summary.Agents = summarizeRecords(
+      agents,
+      ["AgentID", "AgentName"],
+      5
+    );
+    summary.AgentCount = agents.length;
+  }
+
+  if (properties.length > 0) {
+    summary.Properties = summarizeRecords(
+      properties,
+      ["PropertyID", "Reference", "Address", "Price", "LastUpdate"],
+      5
+    );
+    summary.PropertyCount = properties.length;
+  }
+
+  if (isRecord(lead.Customer)) {
+    summary.Customer = copyFields(lead.Customer, [
+      "Name",
+      "EmailAddress",
+      "PhoneNumber",
+      "Language",
+    ]);
+  }
+
+  if (events.length > 0) {
+    const recentEvents = [...events]
+      .sort((left, right) =>
+        compareLeadDates(left, right, "LastUpdate", "desc") ||
+        compareLeadDates(left, right, "CreateDate", "desc") ||
+        compareEventDates(left, right)
+      )
+      .slice(0, 3);
+    summary.Events = summarizeRecords(
+      recentEvents,
+      ["EventID", "EventType", "EventTypeID", "Title", "Location", "StartDate", "EndDate"],
+      3
+    );
+    summary.EventCount = events.length;
+  }
+
+  return summary;
+}
+
+function compareEventDates(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>
+): number {
+  const readTime = (record: Record<string, unknown>): number => {
+    for (const field of ["StartDate", "EndDate"]) {
+      if (typeof record[field] !== "string") continue;
+      const parsed = Date.parse(record[field]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+    return Number.NEGATIVE_INFINITY;
+  };
+
+  return readTime(right) - readTime(left);
 }
 
 function compareLeadDates(
@@ -108,13 +213,15 @@ export function shapeLeadListResult(
 
   const sortBy = options.resultSortBy ?? "CreateDate";
   const sortDirection = options.resultSortDirection ?? "desc";
+  const detail = options.resultDetail ?? "summary";
   const limit = options.resultLimit ?? DEFAULT_LEAD_RESULT_LIMIT;
   const opportunities = data.Opportunities.filter(isRecord);
   const selected = [...opportunities]
     .sort((left, right) =>
       compareLeadDates(left, right, sortBy, sortDirection)
     )
-    .slice(0, limit);
+    .slice(0, limit)
+    .map((lead) => (detail === "full" ? lead : summarizeLead(lead)));
 
   return {
     ...data,
@@ -125,6 +232,7 @@ export function shapeLeadListResult(
       limit,
       sortBy,
       sortDirection,
+      detail,
       truncated: selected.length < opportunities.length,
     },
   };
@@ -163,6 +271,7 @@ export const callCrmApiTool = tool(
     resultLimit,
     resultSortBy,
     resultSortDirection,
+    resultDetail,
   }) => {
     const requestBody = mergeFiltersIntoBody(endpoint, body, filters);
     const request = {
@@ -184,6 +293,7 @@ export const callCrmApiTool = tool(
               resultLimit,
               resultSortBy,
               resultSortDirection,
+              resultDetail,
             })
           : response.data;
 
@@ -226,7 +336,7 @@ export const callCrmApiTool = tool(
       "Supported paginated list endpoints are automatically fetched across all pages by default: /api/Agency/GetAgencies, /api/Entity/GetAgents, /api/Entity/GetOwnerlinks, and /api/Property/ListProperties. " +
       "For properties, filters include Reference, PropertyIds, BusinessTypeIds, PropertyTypeIds, Locations, PriceFrom, PriceTo, MinBedrooms, MaxBedrooms, Active, VisibleOnWebsite, Sold, AgentId, AgencyId, FreeText, and related FilterRq fields. " +
       "For leads, filters include StartDate, EndDate, Category, OriginId, and Language; the API spec does not expose pagination for /api/Leads/List. " +
-      "Lead-list results are sorted by CreateDate descending and limited to 20 records by default because the API returns its entire history. Use resultLimit (maximum 100) to request a different bounded count, resultSortBy to sort by CreateDate or LastUpdate, and resultSortDirection for newest/oldest ordering. The _result metadata reports the full matching count and whether the returned records were truncated. " +
+      "Lead-list results are sorted by CreateDate descending, limited to 20 records, and compacted to useful summary fields by default because the API returns its entire history with large nested event data. Use resultLimit (maximum 100) to request a different bounded count, resultSortBy to sort by CreateDate or LastUpdate, resultSortDirection for newest/oldest ordering, and resultDetail=full only when the user explicitly needs complete nested lead details. The _result metadata reports the full matching count and whether records were truncated. " +
       "For GET requests, provide query parameters in 'queryParams'.",
     schema: z.object({
       endpoint: z
@@ -293,6 +403,12 @@ export const callCrmApiTool = tool(
         .optional()
         .describe(
           "Lead-list order: desc returns the newest records first (default); asc returns the oldest first."
+        ),
+      resultDetail: z
+        .enum(["summary", "full"])
+        .optional()
+        .describe(
+          "Lead-list detail level. Defaults to summary; use full only when complete nested lead/event details are necessary."
         ),
     }),
   }

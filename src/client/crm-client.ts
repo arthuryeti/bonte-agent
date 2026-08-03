@@ -35,8 +35,19 @@ export interface CrmPaginatedResponse extends CrmResponse {
   };
 }
 
-const BASE_URL = "https://crmapi.casafaricrm.com";
-// const BASE_URL = "https://crmapi.proppydev.com";
+const DEFAULT_BASE_URL = "https://crmapi.casafaricrm.com";
+const DEFAULT_TIMEOUT_MS = 30_000;
+
+function getBaseUrl(): string {
+  return process.env.CRM_BASE_URL?.trim() || DEFAULT_BASE_URL;
+}
+
+function getTimeoutMs(): number {
+  const configured = Number(process.env.CRM_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : DEFAULT_TIMEOUT_MS;
+}
 
 type PaginationConfig =
   | {
@@ -139,7 +150,29 @@ function cloneBody(body: unknown): Record<string, unknown> {
 }
 
 function normalizeEndpoint(endpoint: string): string {
-  return new URL(endpoint, BASE_URL).pathname;
+  return new URL(endpoint, getBaseUrl()).pathname;
+}
+
+function describeErrorResponse(data: unknown): string {
+  if (typeof data === "string") {
+    if (/cloudflare|sorry, you have been blocked/i.test(data)) {
+      return "request blocked by the CRM security service";
+    }
+
+    const plainText = data
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    return plainText.slice(0, 500);
+  }
+
+  try {
+    return JSON.stringify(data).slice(0, 1_000);
+  } catch {
+    return "unreadable error response";
+  }
 }
 
 function clampPageSize(pageSize: number, maxPageSize: number): number {
@@ -218,7 +251,7 @@ function withPagination(
 }
 
 export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
-  const url = new URL(request.endpoint, BASE_URL);
+  const url = new URL(request.endpoint, getBaseUrl());
 
   if (request.queryParams) {
     for (const [key, value] of Object.entries(request.queryParams)) {
@@ -237,6 +270,7 @@ export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
+    signal: AbortSignal.timeout(getTimeoutMs()),
   };
 
   if (request.method === "POST") {
@@ -254,8 +288,9 @@ export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
   }
 
   if (!response.ok) {
+    const detail = describeErrorResponse(data);
     throw new Error(
-      `CRM API error: ${response.status} ${response.statusText}\n${JSON.stringify(data, null, 2)}`
+      `CRM API error: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`
     );
   }
 
