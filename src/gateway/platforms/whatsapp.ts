@@ -13,6 +13,7 @@
 import { BasePlatformAdapter } from "./base.js";
 import fs from "node:fs";
 import path from "node:path";
+import qrcode from "qrcode-terminal";
 import type {
   MessageEvent,
   SendDocumentOptions,
@@ -62,7 +63,9 @@ export class WhatsAppAdapter extends BasePlatformAdapter {
 
     this.sock = baileys.makeWASocket({
       auth: state,
-      printQRInTerminal: true,
+      // Baileys no longer renders the QR itself. Render the value emitted by
+      // connection.update below so it also appears in container logs.
+      printQRInTerminal: false,
       defaultQueryTimeoutMs: undefined,
     });
 
@@ -74,7 +77,9 @@ export class WhatsAppAdapter extends BasePlatformAdapter {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        console.log("[WhatsApp] scan the QR code above to pair");
+        console.log("\n[WhatsApp] scan this QR code to pair:\n");
+        qrcode.generate(qr, { small: true });
+        console.log("\n[WhatsApp] waiting for scan...\n");
       }
 
       if (connection === "close") {
