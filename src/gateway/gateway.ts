@@ -182,6 +182,9 @@ platformRegistry.register({
       allowFrom: cfg.allowFrom as string[] | undefined,
       allowGroups: cfg.allowGroups as string[] | undefined,
       requireMention: cfg.requireMention as boolean | undefined,
+      debug: cfg.debug as boolean | undefined,
+      sendTimeoutMs: cfg.sendTimeoutMs as number | undefined,
+      chunkDelayMs: cfg.chunkDelayMs as number | undefined,
     }),
   requiredEnv: [], // WhatsApp uses file-based auth, no env key needed
 });

@@ -52,6 +52,15 @@ function buildConfig(): GatewayConfig {
           ? process.env.WHATSAPP_ALLOW_GROUPS.split(",").map((s) => s.trim())
           : undefined,
         requireMention: process.env.WHATSAPP_REQUIRE_MENTION === "true",
+        debug: process.env.WHATSAPP_DEBUG === "true",
+        sendTimeoutMs: parseInt(
+          process.env.WHATSAPP_SEND_TIMEOUT_MS || "60000",
+          10
+        ),
+        chunkDelayMs: parseInt(
+          process.env.WHATSAPP_CHUNK_DELAY_MS || "300",
+          10
+        ),
       },
     });
   }

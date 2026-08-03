@@ -212,11 +212,30 @@ TELEGRAM_STREAM_UPDATES=true                # optional, defaults to true
 # WhatsApp — enables Baileys WebSocket connection
 WHATSAPP_ENABLED=true
 WHATSAPP_AUTH_DIR=.whatsapp-auth            # session persistence
-WHATSAPP_ALLOW_FROM=                        # optional JID allowlist
-WHATSAPP_REQUIRE_MENTION=true               # optional (groups only)
+WHATSAPP_ALLOW_FROM=351912345678            # optional phones/JIDs/LIDs; * allows all
+WHATSAPP_REQUIRE_MENTION=true               # groups: mention, command, or reply to bot
+WHATSAPP_DEBUG=false                        # verbose protocol diagnostics
+WHATSAPP_SEND_TIMEOUT_MS=60000              # timeout for a stuck send
+WHATSAPP_CHUNK_DELAY_MS=300                 # pacing between long-message chunks
 ```
 
 **WhatsApp first-time setup:** On first run, Baileys prints a **QR code** to the terminal. Scan it with WhatsApp on your phone (Linked Devices → Link a Device). Credentials are saved to `WHATSAPP_AUTH_DIR` so you don't need to scan again.
+
+Baileys reports disconnect `515` immediately after a successful first pairing;
+this is the expected request to restart the socket, and the gateway reconnects
+automatically. Disconnect `401` means WhatsApp removed or logged out the linked
+device. The gateway clears only that revoked auth state, preserves the mounted
+auth directory, and prints a fresh QR code. Keep a single gateway replica per
+WhatsApp auth volume so two sockets do not compete for the same linked device.
+
+The socket lifecycle follows the current
+[Hermes Agent WhatsApp bridge](https://github.com/NousResearch/hermes-agent/blob/main/scripts/whatsapp-bridge/bridge.js):
+it resolves the current WhatsApp Web protocol version with a bounded fallback,
+uses Baileys v7's message-retry callback, disables full-history sync and online
+presence, serializes outbound sends, applies send timeouts, retries failed
+reconnections, and resolves phone-number/LID aliases for allowlists. Hermes runs
+this logic as a Node sidecar because its main gateway is Python; this project is
+already Node.js, so the same behavior runs directly inside the adapter.
 
 ### Session management
 
