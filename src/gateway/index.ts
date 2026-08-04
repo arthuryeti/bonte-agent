@@ -11,6 +11,10 @@ export { platformRegistry } from "./registry.js";
 export { BasePlatformAdapter } from "./platforms/base.js";
 export { TelegramAdapter } from "./platforms/telegram.js";
 export { WhatsAppAdapter } from "./platforms/whatsapp.js";
+export type {
+  WhatsAppConfig,
+  WhatsAppMode,
+} from "./platforms/whatsapp.js";
 
 export type {
   Platform,
@@ -18,5 +22,10 @@ export type {
   GatewayConfig,
   MessageEvent,
   Attachment,
+  OutboundMediaType,
+  SendDocumentOptions,
+  SendLocationOptions,
+  SendMediaOptions,
   SendOptions,
+  SentMessageRef,
 } from "./types.js";

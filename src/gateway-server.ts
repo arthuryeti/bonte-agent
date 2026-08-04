@@ -14,6 +14,7 @@ import { describeResolvedProvider } from "./providers/factory.js";
  *  - TELEGRAM_BOT_TOKEN    → required for Telegram
  *  - TELEGRAM_ALLOWED_USERS→ optional comma-separated user IDs
  *  - WHATSAPP_AUTH_DIR     → optional auth state directory (default: .whatsapp-auth)
+ *  - WHATSAPP_MODE         → bot (default) or self-chat
  *
  *  Plus all LLM_PROVIDER / CRM auth vars from .env.example
  */
@@ -59,6 +60,27 @@ function buildConfig(): GatewayConfig {
         ),
         chunkDelayMs: parseInt(
           process.env.WHATSAPP_CHUNK_DELAY_MS || "300",
+          10
+        ),
+        mode:
+          process.env.WHATSAPP_MODE === "self-chat" ? "self-chat" : "bot",
+        replyPrefix:
+          !process.env.WHATSAPP_REPLY_PREFIX
+            ? undefined
+            : process.env.WHATSAPP_REPLY_PREFIX === "none"
+              ? ""
+              : process.env.WHATSAPP_REPLY_PREFIX.replace(/\\n/g, "\n"),
+        forwardOwnerMessages:
+          process.env.WHATSAPP_FORWARD_OWNER_MESSAGES === "true",
+        handoverMinutes: parseInt(
+          process.env.WHATSAPP_HANDOVER_MINUTES || "60",
+          10
+        ),
+        sendReadReceipts:
+          process.env.WHATSAPP_SEND_READ_RECEIPTS === "true",
+        streamUpdates: process.env.WHATSAPP_STREAM_UPDATES !== "false",
+        maxMessageLength: parseInt(
+          process.env.WHATSAPP_MAX_MESSAGE_LENGTH || "4096",
           10
         ),
       },

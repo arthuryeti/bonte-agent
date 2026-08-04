@@ -9,7 +9,10 @@ import { BasePlatformAdapter } from "../src/gateway/platforms/base.js";
 import { SessionStore } from "../src/gateway/session.js";
 import type {
   MessageEvent,
+  OutboundMediaType,
   SendDocumentOptions,
+  SendLocationOptions,
+  SendMediaOptions,
   SendOptions,
 } from "../src/gateway/types.js";
 
@@ -17,6 +20,16 @@ class RecordingAdapter extends BasePlatformAdapter {
   readonly platform = "telegram" as const;
   messages: string[] = [];
   documents: Array<{ filePath: string; options?: SendDocumentOptions }> = [];
+  media: Array<{
+    filePath: string;
+    type: OutboundMediaType;
+    options?: SendMediaOptions;
+  }> = [];
+  locations: Array<{
+    latitude: number;
+    longitude: number;
+    options?: SendLocationOptions;
+  }> = [];
 
   async connect(): Promise<void> {}
   async disconnect(): Promise<void> {}
@@ -40,6 +53,22 @@ class RecordingAdapter extends BasePlatformAdapter {
   ): Promise<void> {
     this.documents.push({ filePath, options });
   }
+  async sendMedia(
+    _chatId: string,
+    filePath: string,
+    type: OutboundMediaType,
+    options?: SendMediaOptions
+  ): Promise<void> {
+    this.media.push({ filePath, type, options });
+  }
+  async sendLocation(
+    _chatId: string,
+    latitude: number,
+    longitude: number,
+    options?: SendLocationOptions
+  ): Promise<void> {
+    this.locations.push({ latitude, longitude, options });
+  }
 }
 
 let tempDir = "";
@@ -56,6 +85,60 @@ afterEach(() => {
 });
 
 describe("gateway document delivery", () => {
+  it("stores human replies and suppresses the agent during handover", async () => {
+    let invocations = 0;
+    const fakeAgent = {
+      async invoke() {
+        invocations += 1;
+        return { messages: [] };
+      },
+    } as unknown as DeepAgent;
+    const gateway = new Gateway(fakeAgent, { platforms: [] });
+    const handleMessage = (
+      gateway as unknown as {
+        handleMessage(message: MessageEvent): Promise<void>;
+      }
+    ).handleMessage.bind(gateway);
+
+    await handleMessage({
+      id: "owner-message",
+      platform: "whatsapp",
+      chatId: "customer-chat",
+      senderId: "owner",
+      senderName: "Owner",
+      text: "I can help you personally.",
+      timestamp: new Date(),
+      isGroup: false,
+      fromOwner: true,
+      handoverActive: true,
+    });
+    await handleMessage({
+      id: "customer-message",
+      platform: "whatsapp",
+      chatId: "customer-chat",
+      senderId: "customer",
+      senderName: "Customer",
+      text: "Thank you.",
+      timestamp: new Date(),
+      isGroup: false,
+      handoverActive: true,
+    });
+
+    const sessions = (
+      gateway as unknown as { sessions: SessionStore }
+    ).sessions;
+    assert.equal(invocations, 0);
+    assert.deepEqual(
+      sessions
+        .getMessages("whatsapp", "customer-chat")
+        .map(({ role, content }) => ({ role, content })),
+      [
+        { role: "assistant", content: "I can help you personally." },
+        { role: "user", content: "Thank you." },
+      ]
+    );
+  });
+
   it("clears chat history without invoking the agent for /reset", async () => {
     let invoked = false;
     const fakeAgent = {

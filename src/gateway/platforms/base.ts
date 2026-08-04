@@ -8,8 +8,11 @@
 import path from "node:path";
 import type {
   MessageEvent,
+  OutboundMediaType,
   Platform,
   SendDocumentOptions,
+  SendLocationOptions,
+  SendMediaOptions,
   SendOptions,
   SentMessageRef,
 } from "../types.js";
@@ -79,6 +82,32 @@ export abstract class BasePlatformAdapter {
       .filter(Boolean)
       .join("\n");
     await this.sendMessage(chatId, text, options);
+  }
+
+  /** Send media natively when supported, otherwise fall back to a document. */
+  async sendMedia(
+    chatId: string,
+    filePath: string,
+    mediaType: OutboundMediaType,
+    options?: SendMediaOptions
+  ): Promise<void> {
+    await this.sendDocument(chatId, filePath, options);
+  }
+
+  /** Send a map pin when supported, otherwise send a maps link. */
+  async sendLocation(
+    chatId: string,
+    latitude: number,
+    longitude: number,
+    options?: SendLocationOptions
+  ): Promise<void> {
+    const label = options?.name || options?.address;
+    const mapUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+    await this.sendMessage(
+      chatId,
+      [label, mapUrl].filter(Boolean).join("\n"),
+      options
+    );
   }
 
   /** Health check — is the adapter currently connected? */

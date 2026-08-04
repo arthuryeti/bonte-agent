@@ -6,11 +6,16 @@ import { afterEach, describe, it } from "node:test";
 import { WhatsAppAdapter } from "../src/gateway/platforms/whatsapp.js";
 import {
   clearWhatsAppAuthState,
+  createBoundedIdTracker,
+  createHandoverTracker,
   createSerialQueue,
   createWhatsAppVersionResolver,
+  formatWhatsAppText,
   getWhatsAppMessageContent,
+  isWhatsAppSelfChat,
   matchesWhatsAppAllowlist,
   normalizeWhatsAppIdentifier,
+  resolveWhatsAppChatId,
   splitWhatsAppMessage,
 } from "../src/gateway/platforms/whatsapp-helpers.js";
 
@@ -92,6 +97,40 @@ describe("Hermes-compatible WhatsApp behavior", () => {
     );
   });
 
+  it("routes a direct LID chat through its alternate phone JID", () => {
+    assert.equal(
+      resolveWhatsAppChatId(
+        {
+          key: {
+            remoteJid: "134406773694515@lid",
+            remoteJidAlt: "351911111111@s.whatsapp.net",
+          },
+        },
+        ".whatsapp-auth"
+      ),
+      "351911111111@s.whatsapp.net"
+    );
+  });
+
+  it("routes a direct LID chat through the persisted phone mapping", () => {
+    const authDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "whatsapp-route-lid-test-")
+    );
+    tempDirs.push(authDir);
+    fs.writeFileSync(
+      path.join(authDir, "lid-mapping-134406773694515_reverse.json"),
+      JSON.stringify("351911111111")
+    );
+
+    assert.equal(
+      resolveWhatsAppChatId(
+        { key: { remoteJid: "134406773694515@lid" } },
+        authDir
+      ),
+      "351911111111@s.whatsapp.net"
+    );
+  });
+
   it("unwraps ephemeral and view-once text content", () => {
     const content = getWhatsAppMessageContent({
       message: {
@@ -152,6 +191,82 @@ describe("Hermes-compatible WhatsApp behavior", () => {
     ]);
   });
 
+  it("closes and reopens code fences across long chunks", () => {
+    const chunks = splitWhatsAppMessage(
+      `Intro\n\`\`\`ts\n${"const value = 1;\n".repeat(20)}\`\`\`\nDone`,
+      128
+    );
+
+    assert.ok(chunks.length > 1);
+    assert.ok(chunks[0].endsWith("\n```"));
+    assert.ok(chunks[1].startsWith("```ts\n"));
+    assert.ok(chunks.every((chunk) => chunk.length <= 128));
+  });
+
+  it("converts Markdown to WhatsApp formatting while preserving code", () => {
+    assert.equal(
+      formatWhatsAppText(
+        "# Heading\n**bold** *italic* ~~gone~~ [site](https://example.com)\n`**code**`\u200B"
+      ),
+      "*Heading*\n*bold* _italic_ ~gone~ site (https://example.com)\n`**code**`"
+    );
+  });
+
+  it("tracks outbound IDs and expires human handovers", () => {
+    const ids = createBoundedIdTracker(2);
+    ids.remember("one");
+    ids.remember("two");
+    ids.remember("three");
+    assert.equal(ids.has("one"), false);
+    assert.equal(ids.has("three"), true);
+
+    let now = 1_000;
+    const handovers = createHandoverTracker(500, () => now);
+    handovers.activate("chat");
+    assert.equal(handovers.isActive("chat"), true);
+    now = 1_500;
+    assert.equal(handovers.isActive("chat"), false);
+  });
+
+  it("recognizes both phone and LID self chats", () => {
+    const socket = {
+      user: {
+        id: "351920461967:1@s.whatsapp.net",
+        lid: "134406773694515:1@lid",
+      },
+    };
+    assert.equal(
+      isWhatsAppSelfChat("351920461967@s.whatsapp.net", socket),
+      true
+    );
+    assert.equal(isWhatsAppSelfChat("134406773694515@lid", socket), true);
+    assert.equal(isWhatsAppSelfChat("351911111111@s.whatsapp.net", socket), false);
+  });
+
+  it("recognizes a self-chat LID through the persisted phone mapping", () => {
+    const authDir = fs.mkdtempSync(
+      path.join(os.tmpdir(), "whatsapp-self-lid-test-")
+    );
+    tempDirs.push(authDir);
+    fs.writeFileSync(
+      path.join(authDir, "lid-mapping-351920461967.json"),
+      JSON.stringify("134406773694515")
+    );
+    fs.writeFileSync(
+      path.join(authDir, "lid-mapping-134406773694515_reverse.json"),
+      JSON.stringify("351920461967")
+    );
+
+    assert.equal(
+      isWhatsAppSelfChat(
+        "134406773694515@lid",
+        { user: { id: "351920461967:1@s.whatsapp.net" } },
+        authDir
+      ),
+      true
+    );
+  });
+
   it("enforces group mention gating while allowing commands", () => {
     const adapter = new WhatsAppAdapter({ requireMention: true });
     const toEvent = (
@@ -198,5 +313,249 @@ describe("Hermes-compatible WhatsApp behavior", () => {
         socket
       )
     );
+  });
+
+  it("uses self-chat input, prefixes replies, and ignores outbound echoes", async () => {
+    const sentPayloads: Array<Record<string, unknown>> = [];
+    let sentId = 0;
+    const socket = {
+      user: { id: "351920461967:1@s.whatsapp.net" },
+      async sendMessage(
+        _chatId: string,
+        payload: Record<string, unknown>
+      ) {
+        sentPayloads.push(payload);
+        sentId += 1;
+        return {
+          key: {
+            id: `sent-${sentId}`,
+            remoteJid: "351920461967@s.whatsapp.net",
+            fromMe: true,
+          },
+          message: payload,
+        };
+      },
+    };
+    const adapter = new WhatsAppAdapter({
+      mode: "self-chat",
+      replyPrefix: "BOT\n",
+    });
+    Object.assign(adapter as object, { sock: socket, connected: true });
+    const events: unknown[] = [];
+    adapter.onMessage(async (event) => {
+      events.push(event);
+    });
+
+    const handleUpsert = (
+      adapter as unknown as {
+        handleMessageUpsert(socket: unknown, upsert: unknown): Promise<void>;
+      }
+    ).handleMessageUpsert.bind(adapter);
+    await handleUpsert(socket, {
+      type: "append",
+      messages: [
+        {
+          key: {
+            id: "owner-input",
+            remoteJid: "351920461967@s.whatsapp.net",
+            // Baileys may label a linked-account self-chat message either way.
+            fromMe: false,
+          },
+          messageTimestamp: 1,
+          message: { conversation: "hello" },
+        },
+      ],
+    });
+    await adapter.sendMessage(
+      "351920461967@s.whatsapp.net",
+      "**answer**"
+    );
+    await handleUpsert(socket, {
+      type: "append",
+      messages: [
+        {
+          key: {
+            id: "sent-1",
+            remoteJid: "351920461967@s.whatsapp.net",
+            fromMe: true,
+          },
+          messageTimestamp: 2,
+          message: { conversation: "BOT answer" },
+        },
+      ],
+    });
+
+    assert.equal(events.length, 1);
+    assert.deepEqual(sentPayloads[0], { text: "BOT\n*answer*" });
+  });
+
+  it("accepts an external bot message delivered as an append upsert", async () => {
+    const socket = {
+      user: { id: "351920461967:1@s.whatsapp.net" },
+    };
+    const adapter = new WhatsAppAdapter({ mode: "bot" });
+    Object.assign(adapter as object, { sock: socket, connected: true });
+    const events: Array<{ text: string; fromOwner?: boolean }> = [];
+    adapter.onMessage(async (event) => {
+      events.push({ text: event.text, fromOwner: event.fromOwner });
+    });
+    const handleUpsert = (
+      adapter as unknown as {
+        handleMessageUpsert(socket: unknown, upsert: unknown): Promise<void>;
+      }
+    ).handleMessageUpsert.bind(adapter);
+
+    await handleUpsert(socket, {
+      type: "append",
+      messages: [
+        {
+          key: {
+            id: "external-leads-request",
+            remoteJid: "351911111111@s.whatsapp.net",
+            fromMe: false,
+          },
+          pushName: "Customer",
+          messageTimestamp: 1,
+          message: { conversation: "Can you give me the last leads?" },
+        },
+      ],
+    });
+
+    assert.deepEqual(events, [
+      {
+        text: "Can you give me the last leads?",
+        fromOwner: undefined,
+      },
+    ]);
+  });
+
+  it("uses the phone JID as the bot session and reply route for a LID DM", async () => {
+    const socket = {
+      user: { id: "351920461967:1@s.whatsapp.net" },
+    };
+    const adapter = new WhatsAppAdapter({ mode: "bot" });
+    Object.assign(adapter as object, { sock: socket, connected: true });
+    const events: Array<{ chatId: string; senderId: string }> = [];
+    adapter.onMessage(async (event) => {
+      events.push({ chatId: event.chatId, senderId: event.senderId });
+    });
+    const handleUpsert = (
+      adapter as unknown as {
+        handleMessageUpsert(socket: unknown, upsert: unknown): Promise<void>;
+      }
+    ).handleMessageUpsert.bind(adapter);
+
+    await handleUpsert(socket, {
+      type: "notify",
+      messages: [
+        {
+          key: {
+            id: "lid-customer-1",
+            remoteJid: "134406773694515@lid",
+            remoteJidAlt: "351911111111@s.whatsapp.net",
+            fromMe: false,
+          },
+          pushName: "Customer",
+          messageTimestamp: 1,
+          message: { conversation: "Can you give me the last leads?" },
+        },
+      ],
+    });
+
+    assert.deepEqual(events, [
+      {
+        chatId: "351911111111@s.whatsapp.net",
+        senderId: "351911111111@s.whatsapp.net",
+      },
+    ]);
+  });
+
+  it("marks accepted customer messages read and flags owner handover", async () => {
+    const readKeys: unknown[] = [];
+    const socket = {
+      user: { id: "351920461967:1@s.whatsapp.net" },
+      async readMessages(keys: unknown[]) {
+        readKeys.push(...keys);
+      },
+    };
+    const adapter = new WhatsAppAdapter({
+      mode: "bot",
+      allowFrom: ["351911111111"],
+      forwardOwnerMessages: true,
+      handoverMinutes: 5,
+      sendReadReceipts: true,
+    });
+    Object.assign(adapter as object, { sock: socket, connected: true });
+    const events: Array<{ fromOwner?: boolean; handoverActive?: boolean }> = [];
+    adapter.onMessage(async (event) => {
+      events.push(event);
+    });
+    const handleUpsert = (
+      adapter as unknown as {
+        handleMessageUpsert(socket: unknown, upsert: unknown): Promise<void>;
+      }
+    ).handleMessageUpsert.bind(adapter);
+    const remoteJid = "351911111111@s.whatsapp.net";
+
+    await handleUpsert(socket, {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "owner-1", remoteJid, fromMe: true },
+          messageTimestamp: 1,
+          message: { conversation: "I will take this" },
+        },
+      ],
+    });
+    await handleUpsert(socket, {
+      type: "notify",
+      messages: [
+        {
+          key: { id: "customer-1", remoteJid, fromMe: false },
+          messageTimestamp: 2,
+          message: { conversation: "Thank you" },
+        },
+      ],
+    });
+
+    assert.equal(events[0].fromOwner, true);
+    assert.equal(events[1].handoverActive, true);
+    assert.equal(readKeys.length, 1);
+  });
+
+  it("edits live responses and sends native media and locations", async () => {
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "whatsapp-media-test-"));
+    tempDirs.push(parent);
+    const imagePath = path.join(parent, "photo.png");
+    fs.writeFileSync(imagePath, "png");
+    const payloads: Array<Record<string, any>> = [];
+    let sentId = 0;
+    const socket = {
+      async sendMessage(_chatId: string, payload: Record<string, any>) {
+        payloads.push(payload);
+        sentId += 1;
+        return {
+          key: { id: `sent-${sentId}`, remoteJid: "chat", fromMe: true },
+          message: payload,
+        };
+      },
+    };
+    const adapter = new WhatsAppAdapter({ mode: "bot" });
+    Object.assign(adapter as object, { sock: socket, connected: true });
+
+    const ref = await adapter.sendMessageUpdate("chat", "draft");
+    await adapter.sendMessageUpdate("chat", "**final**", undefined, ref);
+    await adapter.sendMedia("chat", imagePath, "image", {
+      mimeType: "image/png",
+    });
+    await adapter.sendLocation("chat", 38.7223, -9.1393, {
+      name: "Lisbon",
+    });
+
+    assert.equal(ref?.messageId, "sent-1");
+    assert.equal(payloads[1].text, "*final*");
+    assert.equal(payloads[1].edit.id, "sent-1");
+    assert.ok(Buffer.isBuffer(payloads[2].image));
+    assert.equal(payloads[3].location.name, "Lisbon");
   });
 });

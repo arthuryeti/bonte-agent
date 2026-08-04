@@ -185,6 +185,13 @@ platformRegistry.register({
       debug: cfg.debug as boolean | undefined,
       sendTimeoutMs: cfg.sendTimeoutMs as number | undefined,
       chunkDelayMs: cfg.chunkDelayMs as number | undefined,
+      mode: cfg.mode as "bot" | "self-chat" | undefined,
+      replyPrefix: cfg.replyPrefix as string | undefined,
+      forwardOwnerMessages: cfg.forwardOwnerMessages as boolean | undefined,
+      handoverMinutes: cfg.handoverMinutes as number | undefined,
+      sendReadReceipts: cfg.sendReadReceipts as boolean | undefined,
+      streamUpdates: cfg.streamUpdates as boolean | undefined,
+      maxMessageLength: cfg.maxMessageLength as number | undefined,
     }),
   requiredEnv: [], // WhatsApp uses file-based auth, no env key needed
 });
@@ -262,6 +269,27 @@ export class Gateway {
     );
 
     const adapter = this.adapters.get(event.platform);
+    if (event.fromOwner) {
+      this.sessions.addAssistantMessage(
+        event.platform,
+        event.chatId,
+        event.text,
+        event.id
+      );
+      console.log(
+        `[Gateway] human handover started for ${event.platform}:${event.chatId}`
+      );
+      return;
+    }
+
+    if (event.handoverActive) {
+      this.sessions.addUserMessage(event);
+      console.log(
+        `[Gateway] bot response suppressed during human handover for ${event.platform}:${event.chatId}`
+      );
+      return;
+    }
+
     if (this.isResetCommand(event.text)) {
       this.sessions.clearSession(event.platform, event.chatId);
       if (adapter) {
@@ -286,6 +314,7 @@ export class Gateway {
 
     const traceCallback = new AgentTraceCallback();
     const callbacks = [traceCallback];
+    let requestStage = "agent invocation";
 
     try {
       const liveResult: LiveAgentResult =
@@ -321,12 +350,38 @@ export class Gateway {
             delivery.documents.push(documentPath);
           }
         }
+        for (const media of discovered.media) {
+          if (!delivery.media.some((item) => item.filePath === media.filePath)) {
+            delivery.media.push(media);
+          }
+        }
+        for (const location of discovered.locations) {
+          if (
+            !delivery.locations.some(
+              (item) =>
+                item.latitude === location.latitude &&
+                item.longitude === location.longitude
+            )
+          ) {
+            delivery.locations.push(location);
+          }
+        }
       }
 
-      if (!delivery.text.trim() && delivery.documents.length === 0) {
+      if (
+        !delivery.text.trim() &&
+        delivery.documents.length === 0 &&
+        delivery.media.length === 0 &&
+        delivery.locations.length === 0
+      ) {
         delivery.text =
           "I couldn’t produce a usable response. Please try again; if this was a CRM request, check the CRM connection logs.";
       }
+      console.log(
+        `[Gateway] agent completed for ${event.platform}:${event.chatId} ` +
+          `(text=${delivery.text.length}, documents=${delivery.documents.length}, ` +
+          `media=${delivery.media.length}, locations=${delivery.locations.length})`
+      );
 
       // Add assistant response to session
       this.sessions.addAssistantMessage(
@@ -336,6 +391,7 @@ export class Gateway {
       );
 
       // Send back to originating platform
+      requestStage = "response delivery";
       if (adapter) {
         if (delivery.text) {
           await this.deliverText(
@@ -356,9 +412,42 @@ export class Gateway {
             mimeType: mimeTypeForDocument(documentPath),
           });
         }
+
+        for (const media of delivery.media) {
+          console.log(
+            `[Gateway] sending ${media.type} to ${event.platform}:${event.chatId}: ${path.basename(media.filePath)}`
+          );
+          await adapter.sendMedia(event.chatId, media.filePath, media.type, {
+            replyTo: event.id,
+            fileName: path.basename(media.filePath),
+            mimeType: media.mimeType,
+            voice: media.voice,
+            gifPlayback: media.gifPlayback,
+          });
+        }
+
+        for (const location of delivery.locations) {
+          console.log(
+            `[Gateway] sending location to ${event.platform}:${event.chatId}`
+          );
+          await adapter.sendLocation(
+            event.chatId,
+            location.latitude,
+            location.longitude,
+            {
+              replyTo: event.id,
+              name: location.name,
+              address: location.address,
+            }
+          );
+        }
+
+        console.log(
+          `[Gateway] response delivered to ${event.platform}:${event.chatId}`
+        );
       }
     } catch (err) {
-      console.error("[Gateway] agent error:", err);
+      console.error(`[Gateway] ${requestStage} error:`, err);
       if (adapter) {
         await adapter.sendMessage(
           event.chatId,

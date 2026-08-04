@@ -36,6 +36,10 @@ export interface MessageEvent {
   replyTo?: string;
   /** Any attached files */
   attachments?: Attachment[];
+  /** True when this was typed by the linked WhatsApp account owner. */
+  fromOwner?: boolean;
+  /** True while a human owner has taken over this conversation. */
+  handoverActive?: boolean;
 }
 
 export interface SendOptions {
@@ -59,6 +63,22 @@ export interface SendDocumentOptions extends SendOptions {
   fileName?: string;
   /** MIME type for the uploaded document */
   mimeType?: string;
+}
+
+export type OutboundMediaType = "image" | "video" | "audio" | "document";
+
+export interface SendMediaOptions extends SendDocumentOptions {
+  /** Send supported audio as a push-to-talk voice note. */
+  voice?: boolean;
+  /** Render a compatible video as an auto-looping GIF. */
+  gifPlayback?: boolean;
+}
+
+export interface SendLocationOptions extends SendOptions {
+  /** Optional place or business name. */
+  name?: string;
+  /** Optional human-readable address. */
+  address?: string;
 }
 
 export interface PlatformConfig {

@@ -217,6 +217,13 @@ WHATSAPP_REQUIRE_MENTION=true               # groups: mention, command, or reply
 WHATSAPP_DEBUG=false                        # verbose protocol diagnostics
 WHATSAPP_SEND_TIMEOUT_MS=60000              # timeout for a stuck send
 WHATSAPP_CHUNK_DELAY_MS=300                 # pacing between long-message chunks
+WHATSAPP_MODE=bot                           # bot (customer chats) or self-chat (your own chat)
+WHATSAPP_FORWARD_OWNER_MESSAGES=false       # bot mode: owner replies trigger human handover
+WHATSAPP_HANDOVER_MINUTES=60                # suppress bot replies after owner activity
+WHATSAPP_SEND_READ_RECEIPTS=false           # opt-in policy-aware read receipts
+WHATSAPP_STREAM_UPDATES=true                # edit a live response while it streams
+# WHATSAPP_REPLY_PREFIX=none                # optional: remove the self-chat prefix
+# WHATSAPP_MAX_MESSAGE_LENGTH=4096          # optional text chunk size
 ```
 
 **WhatsApp first-time setup:** On first run, Baileys prints a **QR code** to the terminal. Scan it with WhatsApp on your phone (Linked Devices → Link a Device). Credentials are saved to `WHATSAPP_AUTH_DIR` so you don't need to scan again.
@@ -228,6 +235,24 @@ device. The gateway clears only that revoked auth state, preserves the mounted
 auth directory, and prints a fresh QR code. Keep a single gateway replica per
 WhatsApp auth volume so two sockets do not compete for the same linked device.
 
+`WHATSAPP_MODE=bot` listens to allowed customer and group chats. To let the
+linked-account owner answer a customer manually, enable
+`WHATSAPP_FORWARD_OWNER_MESSAGES=true`; an owner-authored message is stored as
+the assistant response and pauses automatic replies in that chat for
+`WHATSAPP_HANDOVER_MINUTES`. `WHATSAPP_MODE=self-chat` instead accepts only
+messages you type in your own WhatsApp chat and prefixes agent replies so they
+are easy to distinguish. Override the prefix with `WHATSAPP_REPLY_PREFIX`
+(literal `\\n` sequences become line breaks), or set it to `none` to remove it.
+
+Agent output uses WhatsApp-native formatting and live responses are edited in
+place. Existing absolute local paths emitted as `MEDIA:/path/to/file` are sent
+natively as images, videos, audio, or documents based on extension. Use
+`VOICE:/path/to/audio` for a push-to-talk note; non-Opus audio and GIF animation
+are converted to WhatsApp-compatible formats with FFmpeg.
+A line such as `LOCATION:38.7223,-9.1393 | Lisbon | Portugal` sends a native map
+pin. Read receipts are disabled by default and, when enabled, are sent only
+after allowlist/group/mention policy accepts the incoming message.
+
 The socket lifecycle follows the current
 [Hermes Agent WhatsApp bridge](https://github.com/NousResearch/hermes-agent/blob/main/scripts/whatsapp-bridge/bridge.js):
 it resolves the current WhatsApp Web protocol version with a bounded fallback,
@@ -236,6 +261,12 @@ presence, serializes outbound sends, applies send timeouts, retries failed
 reconnections, and resolves phone-number/LID aliases for allowlists. Hermes runs
 this logic as a Node sidecar because its main gateway is Python; this project is
 already Node.js, so the same behavior runs directly inside the adapter.
+
+For direct messages delivered by WhatsApp as an `@lid` address, the adapter
+uses Baileys' `remoteJidAlt` phone-number address (or its persisted LID mapping)
+as the session and reply route. This avoids the Baileys failure mode where an
+outbound message sent directly to `@lid` is accepted locally but cannot be
+decrypted by the recipient and may close the outgoing pre-key session.
 
 ### Session management
 

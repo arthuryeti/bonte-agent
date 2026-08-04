@@ -82,6 +82,56 @@ export function expandWhatsAppIdentifiers(
   return resolved;
 }
 
+function normalizePhoneJid(value: unknown): string | undefined {
+  const jid = String(value || "").trim();
+  const identifier = normalizeWhatsAppIdentifier(jid);
+  if (!identifier) return undefined;
+  if (jid.endsWith("@s.whatsapp.net")) {
+    return `${identifier}@s.whatsapp.net`;
+  }
+  if (jid.endsWith("@hosted")) return `${identifier}@hosted`;
+  return undefined;
+}
+
+/**
+ * Prefer the phone-number address for a direct chat received as a LID.
+ *
+ * Baileys exposes the alternate PN address on v7 message keys. Sending a
+ * response back to the raw `@lid` can leave the recipient with "Waiting for
+ * this message" while the outgoing pre-key session is closed. Groups and
+ * already-PN chats retain their original address.
+ */
+export function resolveWhatsAppChatId(msg: any, authDir: string): string {
+  const remoteJid = String(msg?.key?.remoteJid || "");
+  if (
+    !remoteJid ||
+    remoteJid.endsWith("@g.us") ||
+    remoteJid.endsWith("@broadcast") ||
+    (!remoteJid.endsWith("@lid") &&
+      !remoteJid.endsWith("@hosted.lid"))
+  ) {
+    return remoteJid;
+  }
+
+  for (const candidate of [
+    msg?.key?.remoteJidAlt,
+    msg?.key?.senderPn,
+    msg?.senderPn,
+  ]) {
+    const phoneJid = normalizePhoneJid(candidate);
+    if (phoneJid) return phoneJid;
+  }
+
+  const lidIdentifier = normalizeWhatsAppIdentifier(remoteJid);
+  for (const alias of expandWhatsAppIdentifiers(remoteJid, authDir)) {
+    if (alias && alias !== lidIdentifier) {
+      return `${alias}@s.whatsapp.net`;
+    }
+  }
+
+  return remoteJid;
+}
+
 /**
  * Match phone JIDs and v7 LIDs transparently. An empty allowlist preserves
  * this project's existing allow-all behavior; use a concrete list to lock it
@@ -135,6 +185,115 @@ export function getWhatsAppContextInfo(
 export interface BoundedMessageStore {
   remember(message: any): void;
   get(id: string | undefined): any | undefined;
+}
+
+export interface BoundedIdTracker {
+  remember(id: string | undefined): void;
+  has(id: string | undefined): boolean;
+}
+
+export function createBoundedIdTracker(limit = 512): BoundedIdTracker {
+  const ids = new Set<string>();
+  return {
+    remember(id: string | undefined): void {
+      if (!id) return;
+      ids.delete(id);
+      ids.add(id);
+      while (ids.size > limit) {
+        const oldest = ids.values().next().value;
+        if (oldest === undefined) break;
+        ids.delete(oldest);
+      }
+    },
+    has(id: string | undefined): boolean {
+      return Boolean(id && ids.has(id));
+    },
+  };
+}
+
+export interface HandoverTracker {
+  activate(chatId: string): void;
+  isActive(chatId: string): boolean;
+  clear(chatId: string): void;
+}
+
+export function createHandoverTracker(
+  ttlMs: number,
+  now: () => number = Date.now
+): HandoverTracker {
+  const handovers = new Map<string, number>();
+  return {
+    activate(chatId: string): void {
+      if (!chatId || ttlMs <= 0) return;
+      handovers.set(chatId, now() + ttlMs);
+    },
+    isActive(chatId: string): boolean {
+      const expiresAt = handovers.get(chatId);
+      if (!expiresAt) return false;
+      if (expiresAt <= now()) {
+        handovers.delete(chatId);
+        return false;
+      }
+      return true;
+    },
+    clear(chatId: string): void {
+      handovers.delete(chatId);
+    },
+  };
+}
+
+export function isWhatsAppSelfChat(
+  jid: unknown,
+  sock: any,
+  authDir?: string
+): boolean {
+  const chatIdentifier = normalizeWhatsAppIdentifier(jid);
+  if (!chatIdentifier) return false;
+
+  const chatAliases = authDir
+    ? expandWhatsAppIdentifiers(chatIdentifier, authDir)
+    : new Set([chatIdentifier]);
+  for (const ownIdentifier of [sock?.user?.id, sock?.user?.lid]) {
+    const ownAliases = authDir
+      ? expandWhatsAppIdentifiers(ownIdentifier, authDir)
+      : new Set([normalizeWhatsAppIdentifier(ownIdentifier)].filter(Boolean));
+    if ([...ownAliases].some((identifier) => chatAliases.has(identifier))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Remove invisible control characters and normalize unusual spaces. */
+export function sanitizeWhatsAppText(text: string): string {
+  return text
+    .replace(/[\u200B\u2060\u2063\uFEFF]/g, "")
+    .replace(/[\u00A0\u2007\u202F]/g, " ");
+}
+
+/** Convert common Markdown into WhatsApp's lightweight formatting syntax. */
+export function formatWhatsAppText(text: string): string {
+  const protectedSegments: string[] = [];
+  const protectedText = sanitizeWhatsAppText(text).replace(
+    /```[\s\S]*?```|`[^`\n]+`/g,
+    (segment) => {
+      const token = `\uE000${protectedSegments.length}\uE001`;
+      protectedSegments.push(segment);
+      return token;
+    }
+  );
+
+  const formatted = protectedText
+    .replace(/\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1 ($2)")
+    .replace(/(?<![*\w])\*([^*\n]+)\*(?!\*)/g, "_$1_")
+    .replace(/\*\*([^*\n]+)\*\*/g, "*$1*")
+    .replace(/__([^_\n]+)__/g, "*$1*")
+    .replace(/~~([^~\n]+)~~/g, "~$1~")
+    .replace(/^\s{0,3}#{1,6}\s+(.+?)\s*#*$/gm, "*$1*");
+
+  return formatted.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => {
+    return protectedSegments[Number(index)] || "";
+  });
 }
 
 export function createBoundedMessageStore(limit = 512): BoundedMessageStore {
@@ -225,17 +384,35 @@ export function splitWhatsAppMessage(
   if (!text) return [];
   if (text.length <= maxLength) return [text];
 
+  const preserveCodeFences = text.includes("```") && maxLength >= 128;
+  const chunkLimit = preserveCodeFences ? maxLength - 64 : maxLength;
   const chunks: string[] = [];
   let remaining = text;
-  while (remaining.length > maxLength) {
-    let cutAt = remaining.lastIndexOf("\n", maxLength);
-    if (cutAt < Math.floor(maxLength / 2)) {
-      cutAt = remaining.lastIndexOf(" ", maxLength);
+  while (remaining.length > chunkLimit) {
+    let cutAt = remaining.lastIndexOf("\n", chunkLimit);
+    if (cutAt < Math.floor(chunkLimit / 2)) {
+      cutAt = remaining.lastIndexOf(" ", chunkLimit);
     }
-    if (cutAt < 1) cutAt = maxLength;
+    if (cutAt < 1) cutAt = chunkLimit;
     chunks.push(remaining.slice(0, cutAt).trimEnd());
     remaining = remaining.slice(cutAt).trimStart();
   }
   if (remaining) chunks.push(remaining);
-  return chunks;
+  if (!preserveCodeFences) return chunks;
+
+  let inCodeFence = false;
+  let openingFence = "```";
+  return chunks.map((chunk) => {
+    const prefix = inCodeFence ? `${openingFence.slice(0, 48)}\n` : "";
+    for (const marker of chunk.match(/```[^\n]*/g) || []) {
+      if (inCodeFence) {
+        inCodeFence = false;
+      } else {
+        inCodeFence = true;
+        openingFence = marker;
+      }
+    }
+    const suffix = inCodeFence ? "\n```" : "";
+    return `${prefix}${chunk}${suffix}`;
+  });
 }
