@@ -231,9 +231,19 @@ WHATSAPP_STREAM_UPDATES=true                # edit a live response while it stre
 Baileys reports disconnect `515` immediately after a successful first pairing;
 this is the expected request to restart the socket, and the gateway reconnects
 automatically. Disconnect `401` means WhatsApp removed or logged out the linked
-device. The gateway clears only that revoked auth state, preserves the mounted
-auth directory, and prints a fresh QR code. Keep a single gateway replica per
-WhatsApp auth volume so two sockets do not compete for the same linked device.
+device, while `403` means WhatsApp rejected the saved authorization. The gateway
+clears only that revoked auth state, preserves the mounted auth directory, and
+prints a fresh QR code. A `503` is a temporary WhatsApp service rejection and is
+retried after a longer cooldown. Keep a single gateway replica per WhatsApp auth
+volume so two sockets do not compete for the same linked device.
+
+**Coolify:** deploy this repository with the **Docker Compose** build pack so
+the `whatsapp-auth:/app/.whatsapp-auth` volume in `docker-compose.yml` is
+actually mounted. Keep the service at exactly one replica. Before pairing or
+redeploying, stop any local or older deployment using the same auth state; two
+containers opening the same linked-device credentials can invalidate the
+session. Docker Compose deployments also avoid Coolify's overlapping rolling
+update behavior, which is unsuitable for this single-owner WebSocket worker.
 
 `WHATSAPP_MODE=bot` listens to allowed customer and group chats. To let the
 linked-account owner answer a customer manually, enable

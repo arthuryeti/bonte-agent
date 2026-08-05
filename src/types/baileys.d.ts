@@ -32,6 +32,8 @@ declare module "@whiskeysockets/baileys" {
     timedOut: number;
     badSession: number;
     restartRequired: number;
+    forbidden: number;
+    unavailableService: number;
   };
 
   export interface Boom {

@@ -59,6 +59,104 @@ describe("WhatsApp authentication recovery", () => {
       /Refusing to clear unsafe WhatsApp auth directory/
     );
   });
+
+  it("resets forbidden credentials and returns to pairing", async (t) => {
+    t.mock.method(console, "warn", () => undefined);
+    const parent = fs.mkdtempSync(path.join(os.tmpdir(), "whatsapp-auth-test-"));
+    tempDirs.push(parent);
+    const authDir = path.join(parent, ".whatsapp-auth");
+    fs.mkdirSync(authDir);
+    fs.writeFileSync(path.join(authDir, "creds.json"), "{}");
+
+    const adapter = new WhatsAppAdapter({ authDir });
+    const socket = {
+      ev: { removeAllListeners: (_event: string) => undefined },
+    };
+    let resolveReconnect!: (delayMs: number) => void;
+    const reconnectScheduled = new Promise<number>((resolve) => {
+      resolveReconnect = resolve;
+    });
+    Object.assign(adapter as object, {
+      sock: socket,
+      connected: true,
+      scheduleReconnect: (delayMs: number) => resolveReconnect(delayMs),
+    });
+
+    const handleConnectionUpdate = (
+      adapter as unknown as {
+        handleConnectionUpdate(
+          socket: unknown,
+          baileys: unknown,
+          authDir: string,
+          update: unknown
+        ): void;
+      }
+    ).handleConnectionUpdate.bind(adapter);
+    handleConnectionUpdate(
+      socket,
+      {
+        DisconnectReason: {
+          loggedOut: 401,
+          forbidden: 403,
+          restartRequired: 515,
+          unavailableService: 503,
+        },
+      },
+      authDir,
+      {
+        connection: "close",
+        lastDisconnect: { error: { output: { statusCode: 403 } } },
+      }
+    );
+
+    assert.equal(await reconnectScheduled, 1000);
+    assert.deepEqual(fs.readdirSync(authDir), []);
+  });
+
+  it("backs off after a temporary WhatsApp 503", (t) => {
+    t.mock.method(console, "warn", () => undefined);
+    const adapter = new WhatsAppAdapter({});
+    const socket = {
+      ev: { removeAllListeners: (_event: string) => undefined },
+    };
+    let reconnectDelay: number | undefined;
+    Object.assign(adapter as object, {
+      sock: socket,
+      connected: true,
+      scheduleReconnect: (delayMs: number) => {
+        reconnectDelay = delayMs;
+      },
+    });
+
+    const handleConnectionUpdate = (
+      adapter as unknown as {
+        handleConnectionUpdate(
+          socket: unknown,
+          baileys: unknown,
+          authDir: string,
+          update: unknown
+        ): void;
+      }
+    ).handleConnectionUpdate.bind(adapter);
+    handleConnectionUpdate(
+      socket,
+      {
+        DisconnectReason: {
+          loggedOut: 401,
+          forbidden: 403,
+          restartRequired: 515,
+          unavailableService: 503,
+        },
+      },
+      ".whatsapp-auth",
+      {
+        connection: "close",
+        lastDisconnect: { error: { output: { statusCode: 503 } } },
+      }
+    );
+
+    assert.equal(reconnectDelay, 15_000);
+  });
 });
 
 describe("Hermes-compatible WhatsApp behavior", () => {

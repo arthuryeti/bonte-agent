@@ -225,10 +225,19 @@ export class WhatsAppAdapter extends BasePlatformAdapter {
     const statusCode = Number.isFinite(Number(rawStatusCode))
       ? Number(rawStatusCode)
       : undefined;
+    // Baileys classifies both 401 and 403 as unauthorized responses. A 403
+    // cannot be repaired by repeatedly reopening the same credentials, so
+    // reset the auth state and return to pairing instead of creating a tight
+    // reconnect loop.
     const authWasRevoked =
-      statusCode === baileys.DisconnectReason.loggedOut;
+      statusCode === baileys.DisconnectReason.loggedOut ||
+      statusCode === baileys.DisconnectReason.forbidden;
     const reconnectDelay =
-      statusCode === baileys.DisconnectReason.restartRequired ? 1000 : 3000;
+      statusCode === baileys.DisconnectReason.restartRequired
+        ? 1000
+        : statusCode === baileys.DisconnectReason.unavailableService
+          ? 15_000
+          : 3000;
 
     this.detachSocket(sock);
     this.sock = null;
@@ -236,8 +245,12 @@ export class WhatsAppAdapter extends BasePlatformAdapter {
 
     if (authWasRevoked) {
       this.connectionState = "reconnecting";
+      const reason =
+        statusCode === baileys.DisconnectReason.forbidden
+          ? "authorization was rejected (code 403)"
+          : "the linked device was removed (code 401)";
       console.warn(
-        "[WhatsApp] linked device was removed; clearing the revoked session so a new QR code can be generated"
+        `[WhatsApp] ${reason}; clearing the revoked session so a new QR code can be generated`
       );
       void clearWhatsAppAuthState(authDir)
         .then(() => this.scheduleReconnect(1000))
