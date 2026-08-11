@@ -1,5 +1,7 @@
 dist
 node_modules
+web/.next/
+web/node_modules/
 .env
 .whatsapp-auth/
 output/

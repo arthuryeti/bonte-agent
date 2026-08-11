@@ -11,6 +11,8 @@ export { platformRegistry } from "./registry.js";
 export { BasePlatformAdapter } from "./platforms/base.js";
 export { TelegramAdapter } from "./platforms/telegram.js";
 export { WhatsAppAdapter } from "./platforms/whatsapp.js";
+export { WebAdapter } from "./platforms/web.js";
+export { GatewayWebSocketServer } from "./websocket-server.js";
 export type {
   WhatsAppConfig,
   WhatsAppMode,

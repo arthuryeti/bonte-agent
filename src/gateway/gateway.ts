@@ -14,7 +14,8 @@ import path from "node:path";
 import type { BasePlatformAdapter } from "./platforms/base.js";
 import { TelegramAdapter } from "./platforms/telegram.js";
 import { WhatsAppAdapter } from "./platforms/whatsapp.js";
-import { SessionStore } from "./session.js";
+import { WebAdapter } from "./platforms/web.js";
+import { SessionStore, type RecentChatSession } from "./session.js";
 import { platformRegistry } from "./registry.js";
 import {
   extractAllMessageText,
@@ -25,9 +26,14 @@ import {
   extractMediaDelivery,
   mimeTypeForDocument,
 } from "../media-delivery.js";
+import {
+  normalizeLeadListToolOutput,
+  type LeadListView,
+} from "./crm-ui.js";
 import type {
   GatewayConfig,
   MessageEvent,
+  Platform,
   PlatformConfig,
   SentMessageRef,
 } from "./types.js";
@@ -41,6 +47,14 @@ class AgentTraceCallback extends BaseCallbackHandler {
   name = "AgentTraceCallback";
   private toolRuns = new Map<string, string>();
   private documentToolOutputs: unknown[] = [];
+  private leadListOutputs: LeadListView[] = [];
+
+  constructor(
+    private readonly webAdapter?: WebAdapter,
+    private readonly chatId?: string
+  ) {
+    super();
+  }
 
   handleToolStart(
     tool: unknown,
@@ -53,6 +67,12 @@ class AgentTraceCallback extends BaseCallbackHandler {
   ): void {
     const toolName = this.toolName(tool, runName);
     this.toolRuns.set(runId, toolName);
+    if (this.webAdapter && this.chatId) {
+      this.webAdapter.publishToolStart(this.chatId, {
+        run_id: runId,
+        tool_name: toolName,
+      });
+    }
 
     if (toolName === "task") {
       console.log(
@@ -74,10 +94,27 @@ class AgentTraceCallback extends BaseCallbackHandler {
       this.documentToolOutputs.push(output);
     }
 
+    if (toolName === "call_crm_api") {
+      const leadList = normalizeLeadListToolOutput(output);
+      if (leadList) {
+        this.leadListOutputs.push(leadList);
+        if (this.webAdapter && this.chatId) {
+          this.webAdapter.publishLeadList(this.chatId, leadList);
+        }
+      }
+    }
+
     if (toolName === "task") {
       console.log("[DeepAgent] sub-agent completed");
     } else if (process.env.DEEPAGENT_TOOL_LOGS === "true") {
       console.log(`[DeepAgent] tool completed: ${toolName}`);
+    }
+
+    if (this.webAdapter && this.chatId) {
+      this.webAdapter.publishToolComplete(this.chatId, {
+        run_id: runId,
+        tool_name: toolName,
+      });
     }
 
     this.toolRuns.delete(runId);
@@ -85,6 +122,10 @@ class AgentTraceCallback extends BaseCallbackHandler {
 
   getDocumentToolOutputs(): readonly unknown[] {
     return this.documentToolOutputs;
+  }
+
+  getLeadListOutputs(): readonly LeadListView[] {
+    return this.leadListOutputs;
   }
 
   handleToolError(err: unknown, runId: string): void {
@@ -97,6 +138,14 @@ class AgentTraceCallback extends BaseCallbackHandler {
       console.warn(
         `[DeepAgent] tool failed: ${toolName}: ${this.errorMessage(err)}`
       );
+    }
+
+    if (toolName && this.webAdapter && this.chatId) {
+      this.webAdapter.publishToolError(this.chatId, {
+        run_id: runId,
+        tool_name: toolName,
+        message: this.errorMessage(err),
+      });
     }
 
     this.toolRuns.delete(runId);
@@ -174,6 +223,13 @@ platformRegistry.register({
 });
 
 platformRegistry.register({
+  name: "web",
+  label: "Web",
+  factory: () => new WebAdapter(),
+  requiredEnv: [],
+});
+
+platformRegistry.register({
   name: "whatsapp",
   label: "WhatsApp",
   factory: (cfg) =>
@@ -203,6 +259,7 @@ export class Gateway {
   private config: GatewayConfig;
   private purgeInterval?: NodeJS.Timeout;
   private liveAgentStreamingDisabled = false;
+  private activeTurns = new Map<string, AbortController>();
 
   constructor(agent: DeepAgent, config: GatewayConfig) {
     this.agent = agent;
@@ -211,6 +268,7 @@ export class Gateway {
 
   async start(): Promise<void> {
     console.log("[Gateway] starting...");
+    await this.sessions.connect();
 
     // Initialize adapters for enabled platforms
     for (const pc of this.config.platforms) {
@@ -237,10 +295,16 @@ export class Gateway {
     if (this.config.resetPolicy === "after_minutes" && this.config.resetAfterMinutes) {
       const ms = this.config.resetAfterMinutes * 60 * 1000;
       this.purgeInterval = setInterval(() => {
-        const purged = this.sessions.purgeIdle(this.config.resetAfterMinutes!);
-        if (purged > 0) {
-          console.log(`[Gateway] purged ${purged} idle sessions`);
-        }
+        void this.sessions
+          .purgeIdle(this.config.resetAfterMinutes!)
+          .then((purged) => {
+            if (purged > 0) {
+              console.log(`[Gateway] purged ${purged} idle sessions`);
+            }
+          })
+          .catch((error) => {
+            console.error("[Gateway] failed to purge idle sessions:", error);
+          });
       }, Math.min(ms, 60000)); // Check at most every minute
     }
 
@@ -249,6 +313,8 @@ export class Gateway {
 
   async stop(): Promise<void> {
     console.log("[Gateway] stopping...");
+    for (const controller of this.activeTurns.values()) controller.abort();
+    this.activeTurns.clear();
     if (this.purgeInterval) {
       clearInterval(this.purgeInterval);
     }
@@ -261,6 +327,7 @@ export class Gateway {
       }
     }
     this.adapters.clear();
+    await this.sessions.close();
   }
 
   private async handleMessage(event: MessageEvent): Promise<void> {
@@ -270,7 +337,7 @@ export class Gateway {
 
     const adapter = this.adapters.get(event.platform);
     if (event.fromOwner) {
-      this.sessions.addAssistantMessage(
+      await this.sessions.addAssistantMessage(
         event.platform,
         event.chatId,
         event.text,
@@ -283,7 +350,7 @@ export class Gateway {
     }
 
     if (event.handoverActive) {
-      this.sessions.addUserMessage(event);
+      await this.sessions.addUserMessage(event);
       console.log(
         `[Gateway] bot response suppressed during human handover for ${event.platform}:${event.chatId}`
       );
@@ -291,7 +358,7 @@ export class Gateway {
     }
 
     if (this.isResetCommand(event.text)) {
-      this.sessions.clearSession(event.platform, event.chatId);
+      await this.sessions.clearSession(event.platform, event.chatId);
       if (adapter) {
         await adapter.sendMessage(
           event.chatId,
@@ -302,17 +369,39 @@ export class Gateway {
       return;
     }
 
+    const turnKey = this.sessionKey(event.platform, event.chatId);
+    if (this.activeTurns.has(turnKey)) {
+      if (adapter) {
+        await adapter.sendMessage(
+          event.chatId,
+          "I’m still working on the previous request. Stop it before sending another message."
+        );
+      }
+      return;
+    }
+    const abortController = new AbortController();
+    this.activeTurns.set(turnKey, abortController);
+
     // Add user message to session history
-    this.sessions.addUserMessage(event);
+    await this.sessions.addUserMessage(event);
 
     // Build message array from session history
-    const history = this.sessions.getMessages(event.platform, event.chatId);
+    const history = await this.sessions.getMessages(event.platform, event.chatId);
     const messages = history.map((m) => ({
       role: m.role,
       content: m.content,
     }));
+    if (event.agentText && messages.length > 0) {
+      messages[messages.length - 1] = {
+        ...messages[messages.length - 1],
+        content: event.agentText,
+      };
+    }
 
-    const traceCallback = new AgentTraceCallback();
+    const traceCallback = new AgentTraceCallback(
+      adapter instanceof WebAdapter ? adapter : undefined,
+      event.chatId
+    );
     const callbacks = [traceCallback];
     let requestStage = "agent invocation";
 
@@ -323,11 +412,15 @@ export class Gateway {
               messages,
               event,
               adapter,
-              callbacks
+              callbacks,
+              abortController.signal
             )
           : {
               result: await this.withTypingIndicator(adapter, event.chatId, () =>
-                this.agent.invoke({ messages }, { callbacks })
+                this.agent.invoke(
+                  { messages },
+                  { callbacks, signal: abortController.signal }
+                )
               ),
             };
       const result = liveResult.result;
@@ -384,10 +477,16 @@ export class Gateway {
       );
 
       // Add assistant response to session
-      this.sessions.addAssistantMessage(
+      await this.sessions.addAssistantMessage(
         event.platform,
         event.chatId,
-        delivery.text || responseText
+        delivery.text || responseText,
+        undefined,
+        traceCallback.getLeadListOutputs().map((data) => ({
+          type: "lead-list" as const,
+          id: data.id,
+          data,
+        }))
       );
 
       // Send back to originating platform
@@ -447,12 +546,20 @@ export class Gateway {
         );
       }
     } catch (err) {
+      if (abortController.signal.aborted) {
+        console.log(`[Gateway] turn stopped for ${event.platform}:${event.chatId}`);
+        return;
+      }
       console.error(`[Gateway] ${requestStage} error:`, err);
       if (adapter) {
         await adapter.sendMessage(
           event.chatId,
           "❌ Sorry, I encountered an error processing your request."
         );
+      }
+    } finally {
+      if (this.activeTurns.get(turnKey) === abortController) {
+        this.activeTurns.delete(turnKey);
       }
     }
   }
@@ -502,7 +609,8 @@ export class Gateway {
     messages: Array<{ role: string; content: string }>,
     event: MessageEvent,
     adapter: BasePlatformAdapter,
-    callbacks: AgentTraceCallback[]
+    callbacks: AgentTraceCallback[],
+    signal: AbortSignal
   ): Promise<LiveAgentResult> {
     const stopTyping = this.startTypingIndicator(adapter, event.chatId);
     let finalResult: unknown;
@@ -525,6 +633,7 @@ export class Gateway {
         {
           streamMode: ["messages", "values"],
           callbacks,
+          signal,
         }
       );
 
@@ -549,8 +658,8 @@ export class Gateway {
         const now = Date.now();
         const shouldUpdate =
           !streamedMessage ||
-          now - lastUpdateAt >= 1200 ||
-          visibleText.length - lastUpdateLength >= 240;
+          now - lastUpdateAt >= adapter.liveUpdateIntervalMs() ||
+          visibleText.length - lastUpdateLength >= adapter.liveUpdateMinChars();
 
         const liveText = extractMediaDelivery(visibleText).text;
         if (!shouldUpdate || !liveText.trim()) continue;
@@ -568,13 +677,17 @@ export class Gateway {
         lastUpdateLength = visibleText.length;
       }
     } catch (err) {
+      if (signal.aborted) throw err;
       this.liveAgentStreamingDisabled = true;
       console.warn(
         "[Gateway] live agent streaming failed; falling back to invoke() for this and future requests:",
         this.errorMessage(err)
       );
 
-      finalResult = await this.agent.invoke({ messages }, { callbacks });
+      finalResult = await this.agent.invoke(
+        { messages },
+        { callbacks, signal }
+      );
     } finally {
       stopTyping();
     }
@@ -703,6 +816,58 @@ export class Gateway {
       out[name] = adapter.status();
     }
     out.sessions = `${this.sessions.sessionCount} active`;
+    out.storage = this.sessions.isPersistent ? "postgresql" : "memory";
     return out;
+  }
+
+  getAdapter<T extends BasePlatformAdapter = BasePlatformAdapter>(
+    platform: Platform
+  ): T | undefined {
+    return this.adapters.get(platform) as T | undefined;
+  }
+
+  async getSessionMessages(platform: Platform, chatId: string) {
+    return (await this.sessions.getMessages(platform, chatId)).map((message) => ({
+      role: message.role,
+      content: message.content,
+      timestamp: message.timestamp.toISOString(),
+      data_parts: message.dataParts ?? [],
+    }));
+  }
+
+  async ensureSession(
+    platform: Platform,
+    chatId: string
+  ): Promise<RecentChatSession> {
+    const session = await this.sessions.ensureSession(platform, chatId);
+    return {
+      id: session.chatId,
+      title: session.title,
+      createdAt: session.createdAt.toISOString(),
+      updatedAt: session.lastActivity.toISOString(),
+    };
+  }
+
+  async listSessions(
+    platform: Platform,
+    limit?: number,
+    chatIdPrefix?: string
+  ): Promise<RecentChatSession[]> {
+    return this.sessions.listSessions(platform, limit, chatIdPrefix);
+  }
+
+  async clearSession(platform: Platform, chatId: string): Promise<void> {
+    await this.sessions.clearSession(platform, chatId);
+  }
+
+  stopSession(platform: Platform, chatId: string): boolean {
+    const controller = this.activeTurns.get(this.sessionKey(platform, chatId));
+    if (!controller) return false;
+    controller.abort();
+    return true;
+  }
+
+  private sessionKey(platform: Platform, chatId: string): string {
+    return `${platform}:${chatId}`;
   }
 }

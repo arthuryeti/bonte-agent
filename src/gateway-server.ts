@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { createCrmAgent } from "./agent.js";
 import { Gateway } from "./gateway/gateway.js";
+import { WebAdapter } from "./gateway/platforms/web.js";
+import { GatewayWebSocketServer } from "./gateway/websocket-server.js";
 import type { GatewayConfig } from "./gateway/types.js";
 import { describeResolvedProvider } from "./providers/factory.js";
 
@@ -15,12 +17,21 @@ import { describeResolvedProvider } from "./providers/factory.js";
  *  - TELEGRAM_ALLOWED_USERS→ optional comma-separated user IDs
  *  - WHATSAPP_AUTH_DIR     → optional auth state directory (default: .whatsapp-auth)
  *  - WHATSAPP_MODE         → bot (default) or self-chat
+ *  - DATABASE_URL          → optional PostgreSQL connection string for durable chats
  *
  *  Plus all LLM_PROVIDER / CRM auth vars from .env.example
  */
 
 function buildConfig(): GatewayConfig {
   const platforms: GatewayConfig["platforms"] = [];
+  const resetAfterMinutes = parseInt(
+    process.env.SESSION_RESET_MINUTES || "0",
+    10
+  );
+
+  if (process.env.WEB_GATEWAY_ENABLED !== "false") {
+    platforms.push({ enabled: true, platform: "web" });
+  }
 
   // Telegram
   if (process.env.TELEGRAM_BOT_TOKEN) {
@@ -89,27 +100,30 @@ function buildConfig(): GatewayConfig {
 
   return {
     platforms,
-    resetPolicy: "after_minutes",
-    resetAfterMinutes: parseInt(process.env.SESSION_RESET_MINUTES || "60", 10),
+    resetPolicy: resetAfterMinutes > 0 ? "after_minutes" : "never",
+    resetAfterMinutes: resetAfterMinutes > 0 ? resetAfterMinutes : undefined,
   };
 }
 
 async function main() {
   const config = buildConfig();
 
-  if (config.platforms.length === 0) {
-    console.error(
-      "No messaging platforms configured.\n" +
-        "Set TELEGRAM_BOT_TOKEN and/or WHATSAPP_ENABLED=true in your .env"
-    );
-    process.exit(1);
-  }
-
   const agent = createCrmAgent("gateway");
   console.log(`[LLM] ${describeResolvedProvider()}`);
 
   const gateway = new Gateway(agent, config);
   await gateway.start();
+
+  let webServer: GatewayWebSocketServer | undefined;
+  const webAdapter = gateway.getAdapter<WebAdapter>("web");
+  if (webAdapter) {
+    webServer = new GatewayWebSocketServer(gateway, webAdapter, {
+      host: process.env.GATEWAY_WEB_HOST || "127.0.0.1",
+      port: parseInt(process.env.GATEWAY_WEB_PORT || "8787", 10),
+      token: process.env.GATEWAY_WEB_TOKEN,
+    });
+    await webServer.start();
+  }
 
   // Status log every 30s
   const statusInterval = setInterval(() => {
@@ -121,6 +135,7 @@ async function main() {
   const shutdown = async (signal: string) => {
     console.log(`\n${signal} received, shutting down...`);
     clearInterval(statusInterval);
+    await webServer?.stop();
     await gateway.stop();
     process.exit(0);
   };

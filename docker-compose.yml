@@ -1,81 +1,153 @@
 services:
-  agent:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-crm_agent}"
+      POSTGRES_USER: "${POSTGRES_USER:-crm_agent}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Coolify}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    expose:
+      - "5432"
+
+  gateway:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
-      - NODE_ENV=production
-      - LLM_PROVIDER=${LLM_PROVIDER:?}
-      - LLM_MODEL=${LLM_MODEL:?}
+      NODE_ENV: production
 
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - TOGETHER_API_KEY=${TOGETHER_API_KEY:-}
-      - NOUS_API_KEY=${NOUS_API_KEY:-}
-      - HF_API_KEY=${HF_API_KEY:-}
-      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
-      - GROQ_API_KEY=${GROQ_API_KEY:-}
-      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
-      - ZAI_API_KEY=${ZAI_API_KEY:-}
-      - KIMI_API_KEY=${KIMI_API_KEY:-}
-      - KIMI_CODING_API_KEY=${KIMI_CODING_API_KEY:-}
+      DATABASE_HOST: postgres
+      DATABASE_PORT: "5432"
+      DATABASE_NAME: "${POSTGRES_DB:-crm_agent}"
+      DATABASE_USER: "${POSTGRES_USER:-crm_agent}"
+      DATABASE_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Coolify}"
+      DATABASE_SSL: "false"
+      DATABASE_POOL_MAX: "${DATABASE_POOL_MAX:-10}"
 
-      - OPENROUTER_BASE_URL=${OPENROUTER_BASE_URL:-}
-      - TOGETHER_BASE_URL=${TOGETHER_BASE_URL:-}
-      - NOUS_BASE_URL=${NOUS_BASE_URL:-}
-      - HF_BASE_URL=${HF_BASE_URL:-}
-      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-}
-      - ANTHROPIC_BASE_URL=${ANTHROPIC_BASE_URL:-}
-      - DEEPSEEK_BASE_URL=${DEEPSEEK_BASE_URL:-}
-      - GROQ_BASE_URL=${GROQ_BASE_URL:-}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-}
-      - ZAI_BASE_URL=${ZAI_BASE_URL:-}
-      - KIMI_BASE_URL=${KIMI_BASE_URL:-}
-      - OPENROUTER_REFERER=${OPENROUTER_REFERER:-}
-      - OPENROUTER_APP_NAME=${OPENROUTER_APP_NAME:-CRM DeepAgent}
+      LLM_PROVIDER: "${LLM_PROVIDER:?Set LLM_PROVIDER in Coolify}"
+      LLM_MODEL: "${LLM_MODEL:?Set LLM_MODEL in Coolify}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+      OPENROUTER_API_KEY: "${OPENROUTER_API_KEY:-}"
+      TOGETHER_API_KEY: "${TOGETHER_API_KEY:-}"
+      NOUS_API_KEY: "${NOUS_API_KEY:-}"
+      HF_API_KEY: "${HF_API_KEY:-}"
+      DEEPSEEK_API_KEY: "${DEEPSEEK_API_KEY:-}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      OLLAMA_API_KEY: "${OLLAMA_API_KEY:-}"
+      ZAI_API_KEY: "${ZAI_API_KEY:-}"
+      KIMI_API_KEY: "${KIMI_API_KEY:-}"
+      KIMI_CODING_API_KEY: "${KIMI_CODING_API_KEY:-}"
 
-      - CRM_API_KEY=${CRM_API_KEY:-}
-      - CRM_USERNAME=${CRM_USERNAME:-}
-      - CRM_PASSWORD=${CRM_PASSWORD:-}
-      - CRM_BEARER_TOKEN=${CRM_BEARER_TOKEN:-}
-      - CRM_BASE_URL=${CRM_BASE_URL:-https://crmapi.casafaricrm.com}
-      - CRM_TIMEOUT_MS=${CRM_TIMEOUT_MS:-30000}
+      OPENROUTER_BASE_URL: "${OPENROUTER_BASE_URL:-}"
+      TOGETHER_BASE_URL: "${TOGETHER_BASE_URL:-}"
+      NOUS_BASE_URL: "${NOUS_BASE_URL:-}"
+      HF_BASE_URL: "${HF_BASE_URL:-}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-}"
+      ANTHROPIC_BASE_URL: "${ANTHROPIC_BASE_URL:-}"
+      DEEPSEEK_BASE_URL: "${DEEPSEEK_BASE_URL:-}"
+      GROQ_BASE_URL: "${GROQ_BASE_URL:-}"
+      OLLAMA_BASE_URL: "${OLLAMA_BASE_URL:-}"
+      ZAI_BASE_URL: "${ZAI_BASE_URL:-}"
+      KIMI_BASE_URL: "${KIMI_BASE_URL:-}"
+      OPENROUTER_REFERER: "${OPENROUTER_REFERER:-}"
+      OPENROUTER_APP_NAME: "${OPENROUTER_APP_NAME:-CRM DeepAgent}"
 
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
-      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS:-}
-      - TELEGRAM_REQUIRE_MENTION=${TELEGRAM_REQUIRE_MENTION:-true}
-      - TELEGRAM_TYPING_INDICATOR=${TELEGRAM_TYPING_INDICATOR:-true}
-      - TELEGRAM_STREAM_UPDATES=${TELEGRAM_STREAM_UPDATES:-true}
+      CRM_API_KEY: "${CRM_API_KEY:-}"
+      CRM_USERNAME: "${CRM_USERNAME:-}"
+      CRM_PASSWORD: "${CRM_PASSWORD:-}"
+      CRM_BEARER_TOKEN: "${CRM_BEARER_TOKEN:-}"
+      CRM_BASE_URL: "${CRM_BASE_URL:-https://crmapi.casafaricrm.com}"
+      CRM_TIMEOUT_MS: "${CRM_TIMEOUT_MS:-30000}"
 
-      - WHATSAPP_ENABLED=${WHATSAPP_ENABLED:-false}
-      - WHATSAPP_AUTH_DIR=/app/.whatsapp-auth
-      - WHATSAPP_ALLOW_FROM=${WHATSAPP_ALLOW_FROM:-}
-      - WHATSAPP_ALLOW_GROUPS=${WHATSAPP_ALLOW_GROUPS:-}
-      - WHATSAPP_REQUIRE_MENTION=${WHATSAPP_REQUIRE_MENTION:-true}
-      - WHATSAPP_DEBUG=${WHATSAPP_DEBUG:-false}
-      - WHATSAPP_SEND_TIMEOUT_MS=${WHATSAPP_SEND_TIMEOUT_MS:-60000}
-      - WHATSAPP_CHUNK_DELAY_MS=${WHATSAPP_CHUNK_DELAY_MS:-300}
-      - WHATSAPP_MODE=${WHATSAPP_MODE:-bot}
-      - WHATSAPP_REPLY_PREFIX=${WHATSAPP_REPLY_PREFIX:-}
-      - WHATSAPP_FORWARD_OWNER_MESSAGES=${WHATSAPP_FORWARD_OWNER_MESSAGES:-false}
-      - WHATSAPP_HANDOVER_MINUTES=${WHATSAPP_HANDOVER_MINUTES:-60}
-      - WHATSAPP_SEND_READ_RECEIPTS=${WHATSAPP_SEND_READ_RECEIPTS:-false}
-      - WHATSAPP_STREAM_UPDATES=${WHATSAPP_STREAM_UPDATES:-true}
-      - WHATSAPP_MAX_MESSAGE_LENGTH=${WHATSAPP_MAX_MESSAGE_LENGTH:-4096}
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      TELEGRAM_ALLOWED_USERS: "${TELEGRAM_ALLOWED_USERS:-}"
+      TELEGRAM_REQUIRE_MENTION: "${TELEGRAM_REQUIRE_MENTION:-true}"
+      TELEGRAM_TYPING_INDICATOR: "${TELEGRAM_TYPING_INDICATOR:-true}"
+      TELEGRAM_STREAM_UPDATES: "${TELEGRAM_STREAM_UPDATES:-true}"
 
-      - SESSION_RESET_MINUTES=${SESSION_RESET_MINUTES:-60}
-      - DEEPAGENT_TOOL_LOGS=${DEEPAGENT_TOOL_LOGS:-false}
+      WHATSAPP_ENABLED: "${WHATSAPP_ENABLED:-false}"
+      WHATSAPP_AUTH_DIR: /app/.whatsapp-auth
+      WHATSAPP_ALLOW_FROM: "${WHATSAPP_ALLOW_FROM:-}"
+      WHATSAPP_ALLOW_GROUPS: "${WHATSAPP_ALLOW_GROUPS:-}"
+      WHATSAPP_REQUIRE_MENTION: "${WHATSAPP_REQUIRE_MENTION:-true}"
+      WHATSAPP_DEBUG: "${WHATSAPP_DEBUG:-false}"
+      WHATSAPP_SEND_TIMEOUT_MS: "${WHATSAPP_SEND_TIMEOUT_MS:-60000}"
+      WHATSAPP_CHUNK_DELAY_MS: "${WHATSAPP_CHUNK_DELAY_MS:-300}"
+      WHATSAPP_MODE: "${WHATSAPP_MODE:-bot}"
+      WHATSAPP_REPLY_PREFIX: "${WHATSAPP_REPLY_PREFIX:-}"
+      WHATSAPP_FORWARD_OWNER_MESSAGES: "${WHATSAPP_FORWARD_OWNER_MESSAGES:-false}"
+      WHATSAPP_HANDOVER_MINUTES: "${WHATSAPP_HANDOVER_MINUTES:-60}"
+      WHATSAPP_SEND_READ_RECEIPTS: "${WHATSAPP_SEND_READ_RECEIPTS:-false}"
+      WHATSAPP_STREAM_UPDATES: "${WHATSAPP_STREAM_UPDATES:-true}"
+      WHATSAPP_MAX_MESSAGE_LENGTH: "${WHATSAPP_MAX_MESSAGE_LENGTH:-4096}"
 
-      - PROPERTY_PDF_BRAND_NAME=${PROPERTY_PDF_BRAND_NAME:-Bonte}
-      - PROPERTY_PDF_LOGO_PATH=${PROPERTY_PDF_LOGO_PATH:-}
-      - PROPERTY_PDF_PRIMARY_COLOR=${PROPERTY_PDF_PRIMARY_COLOR:-#173f38}
-      - PROPERTY_PDF_ACCENT_COLOR=${PROPERTY_PDF_ACCENT_COLOR:-#c7a76c}
+      SESSION_RESET_MINUTES: "${SESSION_RESET_MINUTES:-0}"
+      DEEPAGENT_TOOL_LOGS: "${DEEPAGENT_TOOL_LOGS:-false}"
+      WEB_GATEWAY_ENABLED: "true"
+      GATEWAY_WEB_HOST: 0.0.0.0
+      GATEWAY_WEB_PORT: "8787"
+      GATEWAY_WEB_TOKEN: "${GATEWAY_WEB_TOKEN:?Set GATEWAY_WEB_TOKEN in Coolify}"
+
+      PROPERTY_PDF_BRAND_NAME: "${PROPERTY_PDF_BRAND_NAME:-Bonte}"
+      PROPERTY_PDF_LOGO_PATH: "${PROPERTY_PDF_LOGO_PATH:-}"
+      PROPERTY_PDF_PRIMARY_COLOR: "${PROPERTY_PDF_PRIMARY_COLOR:-#173f38}"
+      PROPERTY_PDF_ACCENT_COLOR: "${PROPERTY_PDF_ACCENT_COLOR:-#c7a76c}"
     volumes:
       - whatsapp-auth:/app/.whatsapp-auth
+      - agent-output:/app/output
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8787/health',{headers:{authorization:'Bearer '+process.env.GATEWAY_WEB_TOKEN}}).then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    expose:
+      - "8787"
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    restart: unless-stopped
+    init: true
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: "3000"
+      GATEWAY_WS_URL: ws://gateway:8787/ws
+      GATEWAY_WEB_TOKEN: "${GATEWAY_WEB_TOKEN:?Set GATEWAY_WEB_TOKEN in Coolify}"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    expose:
+      - "3000"
 
 volumes:
+  postgres-data:
   whatsapp-auth:
+  agent-output:

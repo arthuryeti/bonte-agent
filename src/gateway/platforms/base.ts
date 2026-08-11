@@ -54,6 +54,16 @@ export abstract class BasePlatformAdapter {
     return false;
   }
 
+  /** Minimum time between live response edits for this platform. */
+  liveUpdateIntervalMs(): number {
+    return 1200;
+  }
+
+  /** Emit early when this many new characters are buffered. */
+  liveUpdateMinChars(): number {
+    return 240;
+  }
+
   /** Show a short-lived platform action, such as Telegram's typing indicator. */
   async sendChatAction(_chatId: string, _action = "typing"): Promise<void> {
     // Not all platforms expose chat actions.

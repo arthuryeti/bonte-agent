@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { shapeLeadListResult } from "../src/tools/crm.js";
+import { normalizeLeadListToolOutput } from "../src/gateway/crm-ui.js";
 
 describe("CRM lead result shaping", () => {
   it("returns the newest 20 leads by default with result metadata", () => {
@@ -159,5 +160,70 @@ describe("CRM lead result shaping", () => {
   it("leaves non-lead-shaped responses unchanged", () => {
     const response = { Errors: [{ Message: "Unavailable" }] };
     assert.equal(shapeLeadListResult(response), response);
+  });
+});
+
+describe("CRM lead browser normalization", () => {
+  it("exposes a compact, safe component payload", () => {
+    const result = normalizeLeadListToolOutput(JSON.stringify({
+      Opportunities: [
+        {
+          Id: "lead-42",
+          Title: "Lisbon viewing",
+          CurrentStatus: { Name: "In progress" },
+          Url: "javascript:alert(1)",
+          Customer: {
+            Name: "Joana Silva",
+            EmailAddress: "joana@example.com",
+            PhoneNumber: "+351 912 345 678",
+          },
+          Agents: [{ AgentID: "agent-1", AgentName: "Marta" }],
+          Properties: [{ PropertyID: "property-1", Reference: "LX-100" }],
+          Events: [{ EventID: "event-1", Title: "Call back", StartDate: "2026-08-12T09:00:00Z" }],
+        },
+      ],
+      _result: { totalRecords: 18, returnedRecords: 1, truncated: true },
+    }));
+
+    assert.ok(result);
+    assert.equal(result.totalRecords, 18);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(result.leads[0], {
+      id: "lead-42",
+      title: "Lisbon viewing",
+      status: "In progress",
+      origin: undefined,
+      outcome: undefined,
+      priority: undefined,
+      createdAt: undefined,
+      updatedAt: undefined,
+      salePrice: undefined,
+      crmUrl: undefined,
+      contact: {
+        name: "Joana Silva",
+        email: "joana@example.com",
+        phone: "+351 912 345 678",
+        language: undefined,
+      },
+      agents: [{ id: "agent-1", name: "Marta" }],
+      properties: [{
+        id: "property-1",
+        reference: "LX-100",
+        address: undefined,
+        price: undefined,
+        updatedAt: undefined,
+      }],
+      events: [{
+        id: "event-1",
+        type: undefined,
+        title: "Call back",
+        location: undefined,
+        startsAt: "2026-08-12T09:00:00Z",
+        endsAt: undefined,
+      }],
+      agentCount: 1,
+      propertyCount: 1,
+      eventCount: 1,
+    });
   });
 });

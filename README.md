@@ -28,12 +28,78 @@ Inspired by [Hermes Agent](https://github.com/NousResearch/hermes-agent), this p
    npm run dev
    ```
 
+## Web chat
+
+The small Next.js chat in `web/` uses the AI SDK UI as a presentation layer.
+The browser never constructs the agent: its server route connects to the
+long-running gateway over authenticated JSON-RPC/WebSocket, and the gateway
+owns sessions, streaming, cancellation, tools, and agent execution.
+
+```bash
+cd web
+npm install
+cd ..
+
+# Terminal 1: agent gateway
+npm run gateway
+
+# Terminal 2: web interface
+npm run dev:web
+```
+
+Then open [http://localhost:3000](http://localhost:3000). The web app reads the
+existing root `.env`, so no browser-side API keys are needed.
+
+```text
+Browser (AI SDK) → Next.js route → JSON-RPC/WebSocket gateway → CRM agent
+                                      ├─ session history
+                                      ├─ streaming events
+                                      ├─ typed CRM result parts
+                                      ├─ confirmed lead actions
+                                      └─ stop/reset controls
+```
+
+Lead-list tool results are normalized in the gateway and streamed as typed AI
+SDK data parts. The browser renders those parts with a fixed component registry:
+clickable lead rows, a detail drawer, contact links, related properties, and a
+recent-activity timeline. Unknown tool results still fall back to normal chat
+text; the model never supplies HTML or component code.
+
+The browser UI is a full-screen workspace with a responsive recent-chat
+sidebar. Each entry points to a separate gateway session. PostgreSQL stores the
+chat index, generated titles, message history, and typed CRM result parts; the
+browser stores only an anonymous workspace identifier and the ID of the last
+chat opened on that device. Recent-chat lists are scoped to that workspace, so
+different browsers do not see one another's conversations.
+
+Assistant text supports CommonMark and GitHub-flavored Markdown, including
+tables, task lists, and fenced code. Raw HTML, unsafe link protocols, and remote
+Markdown images are not rendered; user messages remain plain text.
+
+Scheduling a follow-up requires an explicit confirmation in the lead drawer.
+The browser sends a structured `lead.action.submit` command, and the gateway
+validates, authenticates, de-duplicates, and logs it before giving the agent a
+scoped instruction. The browser never calls the CRM API directly.
+
+The gateway listens on `ws://127.0.0.1:8787/ws` by default. Set
+`GATEWAY_WS_URL` for the Next.js server when it runs elsewhere. If the gateway
+binds beyond localhost, set the same `GATEWAY_WEB_TOKEN` in both processes;
+non-loopback gateway binds are rejected without it.
+
 ## Deploying with Coolify
 
-This repository includes a production `Dockerfile` and a
-`docker-compose.yml` configured for Coolify. The gateway is a background
-worker that uses Telegram long polling and/or a WhatsApp WebSocket connection,
-so it does not need a public domain or an exposed port.
+This repository includes production images and a `docker-compose.yml` for a
+three-service Coolify deployment:
+
+```text
+Internet → web:3000 → gateway:8787 → LLM + CRM
+                              └────→ postgres:5432
+```
+
+Only the Next.js `web` service should receive a public domain. The gateway and
+PostgreSQL stay on the private Compose network. The gateway creates its session
+tables and indexes on startup, and the `postgres-data` volume keeps chat titles,
+messages, and rich CRM result parts across redeployments.
 
 ### Create the Coolify resource
 
@@ -41,23 +107,37 @@ so it does not need a public domain or an exposed port.
 2. In Coolify, connect the repository with the GitHub App integration.
 3. Create a new resource from the repository and select the `Docker Compose`
    build pack.
-4. Use `/docker-compose.yml` as the Compose file and leave domains empty.
-5. Fill in the environment variables detected from the Compose file. At
-   minimum, set `LLM_PROVIDER`, `LLM_MODEL`, the matching provider API key,
-   CRM authentication, and either `TELEGRAM_BOT_TOKEN` or
-   `WHATSAPP_ENABLED=true`.
-6. Keep API keys as runtime-only variables; they are not needed during the
-   image build.
-7. Enable **Auto Deploy** under the resource's advanced settings and deploy.
+4. Use `/docker-compose.yml` as the Compose file.
+5. Assign your public HTTPS domain only to the `web` service on port `3000`.
+   Do not assign domains to `gateway` or `postgres`.
+6. Fill in the environment variables detected from the Compose file. At a
+   minimum, set:
 
-The image runs the test suite and TypeScript build before a deployment can
-start. A failed test or build therefore leaves the previous deployment
-running.
+   - `POSTGRES_PASSWORD` to a long random password.
+   - `GATEWAY_WEB_TOKEN` to a separate long random token.
+   - `LLM_PROVIDER`, `LLM_MODEL`, and the matching provider API key.
+   - The appropriate `CRM_*` credentials.
+   - Optional Telegram or WhatsApp variables if those channels are enabled.
+
+   You can generate both secrets locally with `openssl rand -hex 32`.
+7. Keep API keys as runtime-only variables; they are not needed during either
+   image build.
+8. Keep the Compose application at one gateway replica. Telegram long polling
+   and a WhatsApp linked-device session each require a single active owner.
+9. Protect the `web` domain with an access policy or application login before
+   exposing CRM tools and paid model usage to the public internet. The anonymous
+   workspace ID separates browser histories; it is not user authentication.
+10. Enable **Auto Deploy** under the resource's advanced settings and deploy.
+
+The gateway image runs the test suite and TypeScript build, while the web image
+runs the Next.js production build, before a deployment can start. Both services
+define health checks, and startup ordering waits for PostgreSQL, then the
+gateway, then the web app.
 
 For WhatsApp, open the first deployment's runtime logs and scan the pairing QR
 code. The `whatsapp-auth` volume preserves that pairing across deployments.
-Generated PDFs are temporary container files because the gateway uploads them
-to Telegram or WhatsApp immediately.
+Generated files use the `agent-output` volume. Configure regular backups for
+the `postgres-data` volume before putting the deployment into production.
 
 Do not commit `.env` or `.whatsapp-auth`. If `.env` was previously committed,
 remove it from Git tracking with:
@@ -153,12 +233,15 @@ src/
   gateway/
     types.ts            # Platform, MessageEvent, GatewayConfig
     session.ts          # Per-chat conversation history store
+    crm-ui.ts           # Safe CRM result normalization for browser components
     registry.ts         # Platform adapter registry
     gateway.ts          # Gateway orchestrator — routes messages ↔ agent
+    websocket-server.ts # Authenticated JSON-RPC browser transport
     platforms/
       base.ts           # BasePlatformAdapter abstract class
       telegram.ts       # Telegram adapter (Grammy)
       whatsapp.ts       # WhatsApp adapter (Baileys)
+      web.ts            # Typed browser event adapter
   tools/
     crm.ts              # LangChain tool wrapping the CRM API
     property-pdf.ts     # Tool that generates branded property PDF brochures

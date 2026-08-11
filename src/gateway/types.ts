@@ -5,7 +5,7 @@
  * interface so the agent doesn't care where messages come from.
  */
 
-export type Platform = "telegram" | "whatsapp" | "local";
+export type Platform = "telegram" | "whatsapp" | "web" | "local";
 
 export interface Attachment {
   type: "image" | "audio" | "video" | "document";
@@ -28,6 +28,8 @@ export interface MessageEvent {
   senderName: string;
   /** Message text content */
   text: string;
+  /** Optional private instruction used for the current agent turn only. */
+  agentText?: string;
   /** When the message was sent */
   timestamp: Date;
   /** True if this is a group chat */

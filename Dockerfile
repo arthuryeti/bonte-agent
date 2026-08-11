@@ -31,4 +31,6 @@ RUN mkdir -p /app/.whatsapp-auth /app/output/pdf \
 
 USER node
 
+EXPOSE 8787
+
 CMD ["node", "dist/gateway-server.js"]

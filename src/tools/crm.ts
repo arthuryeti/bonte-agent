@@ -108,6 +108,10 @@ function summarizeLead(lead: Record<string, unknown>): Record<string, unknown> {
     "EventPriority",
     "EventType",
     "SalePrice",
+    "Url",
+    "URL",
+    "WebUrl",
+    "LeadUrl",
   ]);
 
   const agents = Array.isArray(lead.Agents) ? lead.Agents.filter(isRecord) : [];
@@ -138,7 +142,10 @@ function summarizeLead(lead: Record<string, unknown>): Record<string, unknown> {
     summary.Customer = copyFields(lead.Customer, [
       "Name",
       "EmailAddress",
+      "Email",
       "PhoneNumber",
+      "Phone",
+      "MobilePhone",
       "Language",
     ]);
   }

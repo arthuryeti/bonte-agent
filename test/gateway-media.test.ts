@@ -129,8 +129,7 @@ describe("gateway document delivery", () => {
     ).sessions;
     assert.equal(invocations, 0);
     assert.deepEqual(
-      sessions
-        .getMessages("whatsapp", "customer-chat")
+      (await sessions.getMessages("whatsapp", "customer-chat"))
         .map(({ role, content }) => ({ role, content })),
       [
         { role: "assistant", content: "I can help you personally." },
@@ -161,7 +160,7 @@ describe("gateway document delivery", () => {
         sessions: SessionStore;
       }
     ).sessions;
-    sessions.addAssistantMessage("telegram", "chat-1", "stale answer");
+    await sessions.addAssistantMessage("telegram", "chat-1", "stale answer");
 
     const event: MessageEvent = {
       id: "message-reset",
@@ -181,7 +180,7 @@ describe("gateway document delivery", () => {
     ).handleMessage(event);
 
     assert.equal(invoked, false);
-    assert.equal(sessions.getMessages("telegram", "chat-1").length, 0);
+    assert.equal((await sessions.getMessages("telegram", "chat-1")).length, 0);
     assert.deepEqual(adapter.messages, [
       "Conversation reset. I’ll use a fresh context for your next request.",
     ]);
