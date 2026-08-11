@@ -286,6 +286,13 @@ export class SessionStore {
 
   async addUserMessage(event: MessageEvent): Promise<ChatMessage> {
     const session = await this.getSession(event.platform, event.chatId);
+    const existing = event.id
+      ? session.messages.find(
+          (message) => message.platformMessageId === event.id
+        )
+      : undefined;
+    if (existing) return existing;
+
     const message: ChatMessage = {
       role: "user",
       content: event.text,
@@ -317,6 +324,13 @@ export class SessionStore {
     dataParts?: ChatMessageDataPart[]
   ): Promise<ChatMessage> {
     const session = await this.getSession(platform, chatId);
+    const existing = platformMessageId
+      ? session.messages.find(
+          (message) => message.platformMessageId === platformMessageId
+        )
+      : undefined;
+    if (existing) return existing;
+
     const message: ChatMessage = {
       role: "assistant",
       content,
@@ -385,6 +399,17 @@ export class SessionStore {
 
   async getMessages(platform: string, chatId: string): Promise<ChatMessage[]> {
     return (await this.getSession(platform, chatId)).messages;
+  }
+
+  async hasMessage(
+    platform: string,
+    chatId: string,
+    platformMessageId: string
+  ): Promise<boolean> {
+    if (!platformMessageId) return false;
+    return (await this.getSession(platform, chatId)).messages.some(
+      (message) => message.platformMessageId === platformMessageId
+    );
   }
 
   async listSessions(

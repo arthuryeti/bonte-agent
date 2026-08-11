@@ -123,6 +123,18 @@ describe("web JSON-RPC gateway", () => {
       (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
     );
 
+    const turnEvents = client.events.filter(
+      (event) => event.turn_id === accepted.turn_id
+    );
+    assert.deepEqual(
+      turnEvents.map((event) => event.sequence),
+      turnEvents.map((_, index) => index + 1)
+    );
+    assert.equal(
+      new Set(turnEvents.map((event) => event.event_id)).size,
+      turnEvents.length
+    );
+
     const deltas = client.events
       .filter((event) => event.type === "message.delta")
       .map((event) => (event.payload as { delta?: string })?.delta ?? "")
@@ -180,6 +192,129 @@ describe("web JSON-RPC gateway", () => {
     await waitForEvent(
       client.events,
       (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+    client.socket.close();
+  });
+
+  it("does not append the final answer twice after a streamed tool preamble", async () => {
+    const preamble = "I’ll fetch the latest leads for you. ";
+    const finalAnswer = "Here are the latest leads, newest first.";
+    const fakeAgent = {
+      async stream() {
+        return (async function* () {
+          yield ["messages", [{ type: "ai", id: "preamble", content: preamble }]];
+          yield ["messages", [{ type: "ai", id: "answer", content: finalAnswer }]];
+          yield ["values", {
+            messages: [{ role: "assistant", content: finalAnswer }],
+          }];
+        })();
+      },
+      async invoke() {
+        return { messages: [{ role: "assistant", content: finalAnswer }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "stream-overlap" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "stream-overlap",
+      text: "Show me the latest leads",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    const visibleText = client.events
+      .filter((event) => event.type === "message.delta")
+      .map((event) => (event.payload as { delta?: string })?.delta ?? "")
+      .join("");
+    assert.equal(visibleText, preamble + finalAnswer);
+    assert.equal(visibleText.split(finalAnswer).length - 1, 1);
+    client.socket.close();
+  });
+
+  it("delivers a complete final answer after only a partial preview was acknowledged", async () => {
+    const preamble = "I’ll fetch the latest leads. ";
+    const partialAnswer = "Here are the latest ";
+    const finalAnswer = `${partialAnswer}leads.`;
+    const fakeAgent = {
+      async stream() {
+        return (async function* () {
+          yield ["messages", [{ type: "ai", id: "preamble", content: preamble }]];
+          yield ["messages", [{ type: "ai", id: "answer", content: partialAnswer }]];
+          yield ["values", {
+            messages: [{ role: "assistant", content: finalAnswer }],
+          }];
+        })();
+      },
+      async invoke() {
+        return { messages: [{ role: "assistant", content: finalAnswer }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "stream-partial" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "stream-partial",
+      request_id: "partial-request",
+      text: "Show me the latest leads",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    const visibleText = client.events
+      .filter((event) => event.type === "message.delta")
+      .map((event) => (event.payload as { delta?: string })?.delta ?? "")
+      .join("");
+    assert.equal(visibleText, `${preamble.trim()}\n\n${finalAnswer}`);
+    assert.equal(visibleText.split(finalAnswer).length - 1, 1);
+    client.socket.close();
+  });
+
+  it("treats a repeated browser request ID as the same persisted turn", async () => {
+    let invocations = 0;
+    const fakeAgent = {
+      async invoke() {
+        invocations += 1;
+        return { messages: [{ role: "assistant", content: "One response." }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+    const params = {
+      session_id: "idempotent-session",
+      request_id: "ui-message-1",
+      text: "Run this once",
+    };
+
+    await client.request("session.create", { session_id: params.session_id });
+    const first = await client.request<{ turn_id: string }>("prompt.submit", params);
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === first.turn_id
+    );
+    const repeated = await client.request<{
+      turn_id: string;
+      duplicate: boolean;
+      status: string;
+    }>("prompt.submit", params);
+
+    assert.equal(repeated.turn_id, first.turn_id);
+    assert.equal(repeated.duplicate, true);
+    assert.equal(repeated.status, "complete");
+    assert.equal(invocations, 1);
+
+    const history = await client.request<{
+      messages: Array<{ role: string; platform_message_id?: string }>;
+    }>("session.history", { session_id: params.session_id });
+    assert.deepEqual(
+      history.messages.map((message) => message.platform_message_id),
+      ["ui-message-1", "assistant:ui-message-1"]
     );
     client.socket.close();
   });

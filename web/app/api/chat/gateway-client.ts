@@ -1,6 +1,9 @@
 import WebSocket, { type RawData } from "ws";
+import { GatewayEventCursor } from "../../../../src/gateway/web-event-cursor";
 
 export interface GatewayEvent<P = Record<string, unknown>> {
+  event_id?: string;
+  sequence?: number;
   type: string;
   session_id?: string;
   turn_id?: string;
@@ -30,6 +33,7 @@ export class GatewayRpcClient {
   private nextId = 0;
   private pending = new Map<number, PendingRequest>();
   private eventHandlers = new Set<(event: GatewayEvent) => void>();
+  private eventCursor = new GatewayEventCursor();
 
   constructor(
     private readonly url: string,
@@ -153,6 +157,7 @@ export class GatewayRpcClient {
     }
 
     if (frame.method === "event" && frame.params) {
+      if (!this.eventCursor.accept(frame.params)) return;
       for (const handler of this.eventHandlers) handler(frame.params);
       return;
     }

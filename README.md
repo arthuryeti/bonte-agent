@@ -76,6 +76,15 @@ Assistant text supports CommonMark and GitHub-flavored Markdown, including
 tables, task lists, and fenced code. Raw HTML, unsafe link protocols, and remote
 Markdown images are not rendered; user messages remain plain text.
 
+Streaming delivery follows Hermes Agent's reconciliation model. For each turn,
+the gateway records the exact preview text acknowledged by the platform and
+compares delivered segments with the completed agent response before finalizing
+the message. A tool preamble or partial preview can never suppress the real
+answer, while an already-delivered final segment is not appended twice. Browser
+events carry stable turn-scoped IDs and monotonic sequence numbers, and a retry
+of the same AI SDK user-message ID reuses the persisted turn instead of running
+the agent or CRM tools again.
+
 Scheduling a follow-up requires an explicit confirmation in the lead drawer.
 The browser sends a structured `lead.action.submit` command, and the gateway
 validates, authenticates, de-duplicates, and logs it before giving the agent a
@@ -236,6 +245,7 @@ src/
     crm-ui.ts           # Safe CRM result normalization for browser components
     registry.ts         # Platform adapter registry
     gateway.ts          # Gateway orchestrator — routes messages ↔ agent
+    turn-delivery-ledger.ts # Reconciles streamed and completed turn delivery
     websocket-server.ts # Authenticated JSON-RPC browser transport
     platforms/
       base.ts           # BasePlatformAdapter abstract class

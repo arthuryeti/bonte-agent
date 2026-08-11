@@ -24,6 +24,8 @@ export type WebGatewayEventType =
   | "location.available";
 
 export interface WebGatewayEvent<P = unknown> {
+  event_id: string;
+  sequence: number;
   type: WebGatewayEventType;
   session_id: string;
   turn_id?: string;
@@ -31,6 +33,16 @@ export interface WebGatewayEvent<P = unknown> {
 }
 
 export type WebGatewayEventHandler = (event: WebGatewayEvent) => void;
+
+type WebGatewayEventInput<P = unknown> = Omit<
+  WebGatewayEvent<P>,
+  "event_id" | "sequence"
+>;
+
+interface ActiveWebTurn {
+  turnId: string;
+  nextSequence: number;
+}
 
 /**
  * In-process platform adapter used by the browser JSON-RPC transport.
@@ -45,7 +57,7 @@ export class WebAdapter extends BasePlatformAdapter {
 
   private connected = false;
   private listeners = new Set<WebGatewayEventHandler>();
-  private activeTurns = new Map<string, string>();
+  private activeTurns = new Map<string, ActiveWebTurn>();
   private messageText = new Map<string, string>();
 
   async connect(): Promise<void> {
@@ -78,7 +90,7 @@ export class WebAdapter extends BasePlatformAdapter {
   async submit(
     sessionId: string,
     text: string,
-    turnId = randomUUID(),
+    turnId: string = randomUUID(),
     agentText?: string
   ): Promise<void> {
     if (!this.connected) {
@@ -88,7 +100,7 @@ export class WebAdapter extends BasePlatformAdapter {
       throw new Error("a turn is already running for this session");
     }
 
-    this.activeTurns.set(sessionId, turnId);
+    this.activeTurns.set(sessionId, { turnId, nextSequence: 1 });
     this.publish({ type: "turn.start", session_id: sessionId, turn_id: turnId });
 
     const event: MessageEvent = {
@@ -145,7 +157,7 @@ export class WebAdapter extends BasePlatformAdapter {
       this.publish({
         type: "message.delta",
         session_id: chatId,
-        turn_id: this.activeTurns.get(chatId),
+        turn_id: this.activeTurns.get(chatId)?.turnId,
         payload: { message_id: messageId, delta: text },
       });
     }
@@ -168,14 +180,14 @@ export class WebAdapter extends BasePlatformAdapter {
     }
 
     const current = this.messageText.get(key) ?? "";
-    const delta = text.startsWith(current) ? text.slice(current.length) : text;
-    this.messageText.set(key, text);
+    const delta = this.appendOnlyDelta(current, text);
+    this.messageText.set(key, current + delta);
 
     if (delta) {
       this.publish({
         type: "message.delta",
         session_id: chatId,
-        turn_id: this.activeTurns.get(chatId),
+        turn_id: this.activeTurns.get(chatId)?.turnId,
         payload: { message_id: messageId, delta },
       });
     }
@@ -189,6 +201,28 @@ export class WebAdapter extends BasePlatformAdapter {
     return { chatId, messageId };
   }
 
+  /**
+   * Browser message streams can only append; unlike Telegram or WhatsApp they
+   * cannot replace an already emitted message. Agent tool turns sometimes
+   * stream a short preamble followed by the final answer, then finalize with
+   * just that answer. Preserve the preamble while avoiding a second copy of
+   * the overlapping final text.
+   */
+  private appendOnlyDelta(current: string, next: string): string {
+    if (!current) return next;
+    if (next.startsWith(current)) return next.slice(current.length);
+    if (current.endsWith(next)) return "";
+
+    const maxOverlap = Math.min(current.length, next.length);
+    for (let length = maxOverlap; length > 0; length -= 1) {
+      if (current.endsWith(next.slice(0, length))) {
+        return next.slice(length);
+      }
+    }
+
+    return `${current.endsWith("\n") || next.startsWith("\n") ? "" : "\n\n"}${next}`;
+  }
+
   async sendDocument(
     chatId: string,
     filePath: string,
@@ -197,7 +231,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "attachment.available",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload: {
         file_name: options?.fileName,
         file_path: filePath,
@@ -215,7 +249,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "location.available",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload: {
         latitude,
         longitude,
@@ -232,7 +266,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "tool.start",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload,
     });
   }
@@ -244,7 +278,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "tool.complete",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload,
     });
   }
@@ -256,7 +290,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "tool.error",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload,
     });
   }
@@ -265,7 +299,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "lead.list.available",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload: { id: data.id, data },
     });
   }
@@ -274,7 +308,7 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "message.start",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload: { message_id: messageId },
     });
   }
@@ -283,12 +317,27 @@ export class WebAdapter extends BasePlatformAdapter {
     this.publish({
       type: "message.complete",
       session_id: chatId,
-      turn_id: this.activeTurns.get(chatId),
+      turn_id: this.activeTurns.get(chatId)?.turnId,
       payload: { message_id: messageId },
     });
   }
 
-  private publish(event: WebGatewayEvent): void {
-    for (const listener of this.listeners) listener(event);
+  private publish(event: WebGatewayEventInput): void {
+    const activeTurn = this.activeTurns.get(event.session_id);
+    const turnId = event.turn_id ?? activeTurn?.turnId;
+    const belongsToActiveTurn = Boolean(
+      activeTurn && turnId === activeTurn.turnId
+    );
+    const sequence = belongsToActiveTurn ? activeTurn!.nextSequence++ : 0;
+    const published: WebGatewayEvent = {
+      ...event,
+      event_id: turnId && sequence > 0
+        ? `${turnId}:${sequence}`
+        : randomUUID(),
+      sequence,
+      turn_id: turnId,
+    };
+
+    for (const listener of this.listeners) listener(published);
   }
 }

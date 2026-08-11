@@ -30,6 +30,7 @@ import {
   normalizeLeadListToolOutput,
   type LeadListView,
 } from "./crm-ui.js";
+import { TurnDeliveryLedger } from "./turn-delivery-ledger.js";
 import type {
   GatewayConfig,
   MessageEvent,
@@ -40,7 +41,7 @@ import type {
 
 interface LiveAgentResult {
   result: unknown;
-  streamedMessage?: SentMessageRef;
+  deliveryLedger?: TurnDeliveryLedger;
 }
 
 class AgentTraceCallback extends BaseCallbackHandler {
@@ -481,7 +482,7 @@ export class Gateway {
         event.platform,
         event.chatId,
         delivery.text || responseText,
-        undefined,
+        event.id ? `assistant:${event.id}` : undefined,
         traceCallback.getLeadListOutputs().map((data) => ({
           type: "lead-list" as const,
           id: data.id,
@@ -497,7 +498,7 @@ export class Gateway {
             adapter,
             event,
             delivery.text,
-            liveResult.streamedMessage
+            liveResult.deliveryLedger
           );
         }
 
@@ -615,10 +616,10 @@ export class Gateway {
     const stopTyping = this.startTypingIndicator(adapter, event.chatId);
     let finalResult: unknown;
     let streamedMessage: SentMessageRef | undefined;
-    let visibleText = "";
     let lastUpdateAt = 0;
     let lastUpdateLength = 0;
     const messageBuffers = new Map<string, string>();
+    const deliveryLedger = new TurnDeliveryLedger();
 
     try {
       const stream = await (
@@ -651,10 +652,17 @@ export class Gateway {
         const messagePayload = Array.isArray(parsed.payload)
           ? parsed.payload[0]
           : undefined;
-        const delta = this.extractMessageDelta(messagePayload, messageBuffers);
-        if (!delta) continue;
+        const messageDelta = this.extractMessageDelta(
+          messagePayload,
+          messageBuffers
+        );
+        if (!messageDelta) continue;
 
-        visibleText += delta;
+        deliveryLedger.recordStreamDelta(
+          messageDelta.messageId,
+          messageDelta.delta
+        );
+        const visibleText = deliveryLedger.streamText;
         const now = Date.now();
         const shouldUpdate =
           !streamedMessage ||
@@ -664,15 +672,19 @@ export class Gateway {
         const liveText = extractMediaDelivery(visibleText).text;
         if (!shouldUpdate || !liveText.trim()) continue;
 
+        const deliveredText = this.formatLiveUpdateText(liveText);
         streamedMessage = await adapter.sendMessageUpdate(
           event.chatId,
-          this.formatLiveUpdateText(liveText),
+          deliveredText,
           {
             replyTo: streamedMessage ? undefined : event.id,
             parseMode: "plain",
           },
           streamedMessage
         );
+        if (streamedMessage) {
+          deliveryLedger.recordStreamDelivery(deliveredText, streamedMessage);
+        }
         lastUpdateAt = now;
         lastUpdateLength = visibleText.length;
       }
@@ -693,8 +705,10 @@ export class Gateway {
     }
 
     return {
-      result: finalResult ?? { messages: [{ content: visibleText }] },
-      streamedMessage,
+      result: finalResult ?? {
+        messages: [{ content: deliveryLedger.streamText }],
+      },
+      deliveryLedger,
     };
   }
 
@@ -737,18 +751,18 @@ export class Gateway {
   private extractMessageDelta(
     message: unknown,
     messageBuffers: Map<string, string>
-  ): string {
-    if (!message || typeof message !== "object") return "";
+  ): { messageId: string; delta: string } | undefined {
+    if (!message || typeof message !== "object") return undefined;
 
     const record = message as Record<string, unknown>;
     const messageType =
       typeof record._getType === "function"
         ? (record._getType as () => unknown)()
         : record.type;
-    if (messageType !== "ai" && messageType !== "assistant") return "";
+    if (messageType !== "ai" && messageType !== "assistant") return undefined;
 
     const text = extractContentText(record.content);
-    if (!text) return "";
+    if (!text) return undefined;
 
     const id =
       typeof record.id === "string"
@@ -757,7 +771,7 @@ export class Gateway {
     const previous = messageBuffers.get(id) ?? "";
     const delta = text.startsWith(previous) ? text.slice(previous.length) : text;
     messageBuffers.set(id, previous + delta);
-    return delta;
+    return delta ? { messageId: id, delta } : undefined;
   }
 
   private formatLiveUpdateText(text: string): string {
@@ -770,24 +784,33 @@ export class Gateway {
     adapter: BasePlatformAdapter,
     event: MessageEvent,
     text: string,
-    streamedMessage?: SentMessageRef
+    deliveryLedger?: TurnDeliveryLedger
   ): Promise<void> {
     const chunks = this.chunkText(text, 4096);
+    const streamedMessage = deliveryLedger?.messageRef;
 
     if (streamedMessage && adapter.supportsMessageUpdates()) {
-      await adapter.sendMessageUpdate(
+      const finalAlreadyVisible =
+        deliveryLedger.deliveredFinalMatches(text) === true;
+      const finalUpdateText = finalAlreadyVisible
+        ? deliveryLedger.acknowledgedText
+        : chunks[0];
+      const finalRef = await adapter.sendMessageUpdate(
         event.chatId,
-        chunks[0],
+        finalUpdateText,
         { parseMode: "markdown" },
         streamedMessage
       );
 
-      for (const chunk of chunks.slice(1)) {
-        await adapter.sendMessage(event.chatId, chunk, {
-          parseMode: "markdown",
-        });
+      if (!finalAlreadyVisible) {
+        for (const chunk of chunks.slice(1)) {
+          await adapter.sendMessage(event.chatId, chunk, {
+            parseMode: "markdown",
+          });
+        }
       }
 
+      deliveryLedger.recordFinalDelivery(text, finalRef ?? streamedMessage);
       return;
     }
 
@@ -830,9 +853,18 @@ export class Gateway {
     return (await this.sessions.getMessages(platform, chatId)).map((message) => ({
       role: message.role,
       content: message.content,
+      platform_message_id: message.platformMessageId,
       timestamp: message.timestamp.toISOString(),
       data_parts: message.dataParts ?? [],
     }));
+  }
+
+  async hasSessionMessage(
+    platform: Platform,
+    chatId: string,
+    platformMessageId: string
+  ): Promise<boolean> {
+    return this.sessions.hasMessage(platform, chatId, platformMessageId);
   }
 
   async ensureSession(

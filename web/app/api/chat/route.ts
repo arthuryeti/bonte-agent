@@ -17,6 +17,7 @@ const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const WORKSPACE_ID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TURN_TIMEOUT_MS = 120_000;
+const GATEWAY_REQUEST_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
 interface ChatRequestBody {
   id?: string;
@@ -30,6 +31,19 @@ interface GatewayHistoryDataPart {
   type?: string;
   id?: string;
   data?: unknown;
+}
+
+interface GatewayHistoryMessage {
+  role: "user" | "assistant" | "system";
+  content: string;
+  platform_message_id?: string;
+  data_parts?: GatewayHistoryDataPart[];
+}
+
+interface AcceptedTurn {
+  turn_id: string;
+  duplicate?: boolean;
+  status?: "accepted" | "running" | "complete" | "error";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -110,13 +124,11 @@ export async function GET(request: Request) {
 
   try {
     await gateway.connect(request.signal);
-    const history = await gateway.request<{
-      messages: Array<{
-        role: "user" | "assistant" | "system";
-        content: string;
-        data_parts?: GatewayHistoryDataPart[];
-      }>;
-    }>("session.history", { session_id: gatewaySessionId }, request.signal);
+    const history = await gateway.request<{ messages: GatewayHistoryMessage[] }>(
+      "session.history",
+      { session_id: gatewaySessionId },
+      request.signal,
+    );
 
     return Response.json({
       messages: history.messages
@@ -126,7 +138,7 @@ export async function GET(request: Request) {
             .map(leadListPart)
             .filter((part): part is NonNullable<typeof part> => Boolean(part));
           return {
-            id: `${sessionId}-${index}`,
+            id: message.platform_message_id || `${sessionId}-${index}`,
             role: message.role,
             parts: [
               { type: "text" as const, text: message.content },
@@ -151,6 +163,9 @@ export async function POST(request: Request) {
   const action = body.action === undefined
     ? undefined
     : parseScheduleFollowUpAction(body.action);
+  const requestId = latestMessage?.id && GATEWAY_REQUEST_ID_PATTERN.test(latestMessage.id)
+    ? latestMessage.id
+    : crypto.randomUUID();
 
   if (!SESSION_ID_PATTERN.test(sessionId) || !WORKSPACE_ID_PATTERN.test(workspaceId)) {
     return Response.json({ error: "A valid session is required." }, { status: 400 });
@@ -169,14 +184,17 @@ export async function POST(request: Request) {
         process.env.GATEWAY_WS_URL || "ws://127.0.0.1:8787/ws",
         process.env.GATEWAY_WEB_TOKEN,
       );
-      const partId = crypto.randomUUID();
+      const partId = `response-${requestId}`;
       let textStarted = false;
       let textEnded = false;
       let acceptedTurnId = "";
+      let submissionResolved = false;
+      let replayPersistedResponse = false;
       let completeTurn: (() => void) | undefined;
       let failTurn: ((error: Error) => void) | undefined;
       let stopRequest: Promise<unknown> | undefined;
       let hasContent = false;
+      const pendingEvents: GatewayEvent[] = [];
       const turnComplete = new Promise<void>((resolve, reject) => {
         completeTurn = resolve;
         failTurn = reject;
@@ -193,17 +211,20 @@ export async function POST(request: Request) {
         writer.write({ type: "text-end", id: partId });
       };
 
-      const removeEventHandler = gateway.onEvent((event) => {
+      const handleGatewayEvent = (event: GatewayEvent) => {
         if (event.session_id !== gatewaySessionId) return;
         if (acceptedTurnId && event.turn_id && event.turn_id !== acceptedTurnId) return;
 
-        if (event.type === "message.delta") {
+        if (event.type === "message.delta" && !replayPersistedResponse) {
           const delta = payloadString(event, "delta");
           if (!delta) return;
           startText();
           hasContent = true;
           writer.write({ type: "text-delta", id: partId, delta });
-        } else if (event.type === "lead.list.available") {
+        } else if (
+          event.type === "lead.list.available" &&
+          !replayPersistedResponse
+        ) {
           const data = event.payload?.data;
           const id = payloadString(event, "id");
           if (!id || !isRecord(data)) return;
@@ -213,7 +234,10 @@ export async function POST(request: Request) {
             id,
             data: data as unknown as LeadListView,
           });
-        } else if (event.type === "attachment.available") {
+        } else if (
+          event.type === "attachment.available" &&
+          !replayPersistedResponse
+        ) {
           const fileName = payloadString(event, "file_name") || "document";
           startText();
           hasContent = true;
@@ -227,6 +251,14 @@ export async function POST(request: Request) {
         } else if (event.type === "turn.complete") {
           completeTurn?.();
         }
+      };
+
+      const removeEventHandler = gateway.onEvent((event) => {
+        if (!submissionResolved) {
+          if (event.session_id === gatewaySessionId) pendingEvents.push(event);
+          return;
+        }
+        handleGatewayEvent(event);
       });
 
       const onAbort = () => {
@@ -245,7 +277,7 @@ export async function POST(request: Request) {
           request.signal,
         );
         const accepted = action
-          ? await gateway.request<{ turn_id: string }>(
+          ? await gateway.request<AcceptedTurn>(
               "lead.action.submit",
               {
                 session_id: gatewaySessionId,
@@ -260,14 +292,63 @@ export async function POST(request: Request) {
               },
               request.signal,
             )
-          : await gateway.request<{ turn_id: string }>(
+          : await gateway.request<AcceptedTurn>(
               "prompt.submit",
-              { session_id: gatewaySessionId, text },
+              {
+                session_id: gatewaySessionId,
+                request_id: requestId,
+                text,
+              },
               request.signal,
             );
         acceptedTurnId = accepted.turn_id;
+        replayPersistedResponse = !action && accepted.duplicate === true;
+        submissionResolved = true;
+        for (const event of pendingEvents) handleGatewayEvent(event);
+        pendingEvents.length = 0;
 
-        await withTurnTimeout(turnComplete);
+        if (replayPersistedResponse) {
+          if (accepted.status === "error") {
+            throw new Error("the original gateway turn failed");
+          }
+          if (accepted.status !== "complete") {
+            await withTurnTimeout(turnComplete);
+          }
+
+          const history = await gateway.request<{
+            messages: GatewayHistoryMessage[];
+          }>(
+            "session.history",
+            { session_id: gatewaySessionId },
+            request.signal,
+          );
+          const persisted = history.messages.findLast(
+            (message) =>
+              message.role === "assistant" &&
+              message.platform_message_id === `assistant:${acceptedTurnId}`,
+          );
+          if (!persisted) {
+            throw new Error("the completed gateway response was not persisted");
+          }
+
+          if (persisted.content) {
+            startText();
+            hasContent = true;
+            writer.write({
+              type: "text-delta",
+              id: partId,
+              delta: persisted.content,
+            });
+          }
+          for (const dataPart of persisted.data_parts ?? []) {
+            const part = leadListPart(dataPart);
+            if (!part) continue;
+            hasContent = true;
+            writer.write(part);
+          }
+        } else {
+          await withTurnTimeout(turnComplete);
+        }
 
         if (!hasContent) throw new Error("The agent returned an empty response.");
         endText();

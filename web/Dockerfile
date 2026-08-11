@@ -10,6 +10,7 @@ FROM dependencies AS build
 WORKDIR /app
 COPY web ./web
 COPY src/gateway/crm-ui-types.ts ./src/gateway/crm-ui-types.ts
+COPY src/gateway/web-event-cursor.ts ./src/gateway/web-event-cursor.ts
 
 WORKDIR /app/web
 RUN npm run build

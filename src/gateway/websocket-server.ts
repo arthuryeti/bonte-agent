@@ -27,6 +27,17 @@ const DEFAULT_MAX_PAYLOAD_BYTES = 64 * 1024;
 const MAX_PROMPT_LENGTH = 8_000;
 const ACTION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const MAX_ACTION_RECORDS = 10_000;
+const MAX_PROMPT_RECORDS = 10_000;
+
+type PromptRequestStatus = "accepted" | "running" | "complete" | "error";
+
+interface PromptRequestRecord {
+  sessionId: string;
+  requestId: string;
+  turnId: string;
+  status: PromptRequestStatus;
+  acceptedAt: number;
+}
 
 interface LeadFollowUpAction {
   action_id: string;
@@ -47,6 +58,8 @@ export class GatewayWebSocketServer {
   private webSocketServer?: WebSocketServer;
   private removeAdapterListener?: () => void;
   private actionRequests = new Map<string, { turnId: string; acceptedAt: number }>();
+  private promptRequests = new Map<string, PromptRequestRecord>();
+  private promptRequestsByTurn = new Map<string, PromptRequestRecord>();
 
   constructor(
     private readonly gateway: Gateway,
@@ -103,7 +116,7 @@ export class GatewayWebSocketServer {
 
     this.webSocketServer.on("connection", (webSocket) => {
       this.clients.set(webSocket, { sessions: new Set() });
-      this.sendEvent(webSocket, { type: "gateway.ready", payload: { protocol: 1 } });
+      this.sendEvent(webSocket, { type: "gateway.ready", payload: { protocol: 2 } });
 
       webSocket.on("message", (data, isBinary) => {
         if (isBinary) {
@@ -117,6 +130,7 @@ export class GatewayWebSocketServer {
     });
 
     this.removeAdapterListener = this.adapter.onEvent((event) => {
+      this.updatePromptStatus(event);
       for (const [client, state] of this.clients) {
         if (state.sessions.has(event.session_id)) this.sendEvent(client, event);
       }
@@ -257,15 +271,61 @@ export class GatewayWebSocketServer {
         if (text.length > MAX_PROMPT_LENGTH) {
           throw new Error(`prompt exceeds ${MAX_PROMPT_LENGTH} characters`);
         }
+        const requestId = typeof params.request_id === "string"
+          ? params.request_id.trim()
+          : randomUUID();
+        if (!ACTION_ID_PATTERN.test(requestId)) {
+          throw new Error("invalid request_id");
+        }
+        state.sessions.add(sessionId);
+        const idempotencyKey = this.promptRequestKey(sessionId, requestId);
+        const existing = this.promptRequests.get(idempotencyKey);
+        if (existing) {
+          return {
+            session_id: sessionId,
+            turn_id: existing.turnId,
+            accepted: true,
+            duplicate: true,
+            status: existing.status,
+          };
+        }
+
+        const turnId = requestId;
+        const assistantAlreadyPersisted = await this.gateway.hasSessionMessage(
+          "web",
+          sessionId,
+          `assistant:${turnId}`
+        );
+        if (assistantAlreadyPersisted) {
+          return {
+            session_id: sessionId,
+            turn_id: turnId,
+            accepted: true,
+            duplicate: true,
+            status: "complete",
+          };
+        }
         if (this.adapter.hasActiveTurn(sessionId)) {
           throw new Error("a turn is already running for this session");
         }
-        state.sessions.add(sessionId);
-        const turnId = randomUUID();
+
+        this.rememberPrompt({
+          sessionId,
+          requestId,
+          turnId,
+          status: "accepted",
+          acceptedAt: Date.now(),
+        });
         setImmediate(() => {
           void this.adapter.submit(sessionId, text, turnId).catch(() => undefined);
         });
-        return { session_id: sessionId, turn_id: turnId, accepted: true };
+        return {
+          session_id: sessionId,
+          turn_id: turnId,
+          accepted: true,
+          duplicate: false,
+          status: "accepted",
+        };
       }
 
       case "lead.action.submit": {
@@ -411,6 +471,50 @@ export class GatewayWebSocketServer {
       if (oldest) this.actionRequests.delete(oldest);
     }
     this.actionRequests.set(key, { turnId, acceptedAt: Date.now() });
+  }
+
+  private promptRequestKey(sessionId: string, requestId: string): string {
+    return `${sessionId}:${requestId}`;
+  }
+
+  private promptTurnKey(sessionId: string, turnId: string): string {
+    return `${sessionId}:${turnId}`;
+  }
+
+  private rememberPrompt(record: PromptRequestRecord): void {
+    if (this.promptRequests.size >= MAX_PROMPT_RECORDS) {
+      const oldestKey = this.promptRequests.keys().next().value;
+      if (oldestKey) {
+        const oldest = this.promptRequests.get(oldestKey);
+        this.promptRequests.delete(oldestKey);
+        if (oldest) {
+          this.promptRequestsByTurn.delete(
+            this.promptTurnKey(oldest.sessionId, oldest.turnId)
+          );
+        }
+      }
+    }
+
+    this.promptRequests.set(
+      this.promptRequestKey(record.sessionId, record.requestId),
+      record
+    );
+    this.promptRequestsByTurn.set(
+      this.promptTurnKey(record.sessionId, record.turnId),
+      record
+    );
+  }
+
+  private updatePromptStatus(event: WebGatewayEvent): void {
+    if (!event.turn_id) return;
+    const record = this.promptRequestsByTurn.get(
+      this.promptTurnKey(event.session_id, event.turn_id)
+    );
+    if (!record) return;
+
+    if (event.type === "turn.start") record.status = "running";
+    if (event.type === "turn.complete") record.status = "complete";
+    if (event.type === "turn.error") record.status = "error";
   }
 
   private isAuthorized(request: IncomingMessage): boolean {
