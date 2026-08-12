@@ -1,9 +1,9 @@
 /**
  * Durable per-chat session storage.
  *
- * PostgreSQL is used when DATABASE_URL or DATABASE_HOST is configured. The
- * in-memory fallback keeps local development and unit tests lightweight while
- * exposing the same asynchronous API to the gateway.
+ * PostgreSQL is used when DATABASE_URL or DATABASE_HOST is configured. Drizzle
+ * owns the production schema and migrations; the in-memory fallback keeps
+ * local development and unit tests lightweight.
  */
 
 import { Pool, type PoolClient } from "pg";
@@ -11,37 +11,6 @@ import type { MessageEvent } from "./types.js";
 
 const DEFAULT_CHAT_TITLE = "New conversation";
 const DEFAULT_RECENT_LIMIT = 50;
-
-const SCHEMA_STATEMENTS = [
-  `CREATE TABLE IF NOT EXISTS gateway_sessions (
-    platform TEXT NOT NULL,
-    chat_id TEXT NOT NULL,
-    title TEXT NOT NULL DEFAULT 'New conversation',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (platform, chat_id)
-  )`,
-  `CREATE TABLE IF NOT EXISTS gateway_messages (
-    id BIGSERIAL PRIMARY KEY,
-    platform TEXT NOT NULL,
-    chat_id TEXT NOT NULL,
-    role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
-    content TEXT NOT NULL,
-    platform_message_id TEXT,
-    data_parts JSONB NOT NULL DEFAULT '[]'::jsonb,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    CONSTRAINT gateway_messages_session_fk
-      FOREIGN KEY (platform, chat_id)
-      REFERENCES gateway_sessions(platform, chat_id)
-      ON DELETE CASCADE,
-    CONSTRAINT gateway_messages_platform_id_unique
-      UNIQUE (platform, chat_id, platform_message_id)
-  )`,
-  `CREATE INDEX IF NOT EXISTS gateway_messages_session_order_idx
-    ON gateway_messages (platform, chat_id, id)`,
-  `CREATE INDEX IF NOT EXISTS gateway_sessions_recent_idx
-    ON gateway_sessions (platform, updated_at DESC)`,
-] as const;
 
 export interface ChatMessage {
   role: "user" | "assistant" | "system";
@@ -158,7 +127,15 @@ export class SessionStore {
   }
 
   async connect(): Promise<void> {
-    if ((!this.options.databaseUrl && !this.options.databaseHost) || this.pool) {
+    if (this.pool) {
+      return;
+    }
+    if (!this.options.databaseUrl && !this.options.databaseHost) {
+      if (process.env.NODE_ENV === "production") {
+        throw new Error(
+          "DATABASE_URL is required in production so chats and messages are durable",
+        );
+      }
       return;
     }
     this.pool = new Pool({
@@ -178,9 +155,10 @@ export class SessionStore {
     });
 
     try {
-      for (const statement of SCHEMA_STATEMENTS) {
-        await this.pool.query(statement);
-      }
+      await Promise.all([
+        this.pool.query("SELECT 1 FROM gateway_sessions LIMIT 0"),
+        this.pool.query("SELECT 1 FROM gateway_messages LIMIT 0"),
+      ]);
       this.pool.on("error", (error) => {
         console.error("[Gateway] PostgreSQL session pool error:", error);
       });

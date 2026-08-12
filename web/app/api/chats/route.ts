@@ -1,11 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { getAuthSession, workspaceIdForUser } from "../../../lib/auth-session";
 import { GatewayRpcClient } from "../chat/gateway-client";
 
 export const runtime = "nodejs";
 
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const WORKSPACE_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 interface RecentChat {
   id: string;
@@ -22,10 +21,11 @@ function createGatewayClient(): GatewayRpcClient {
 }
 
 export async function GET(request: Request) {
-  const workspaceId = new URL(request.url).searchParams.get("workspaceId") ?? "";
-  if (!WORKSPACE_ID_PATTERN.test(workspaceId)) {
-    return Response.json({ error: "A valid workspace is required." }, { status: 400 });
+  const session = await getAuthSession(request.headers);
+  if (!session) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
   }
+  const workspaceId = workspaceIdForUser(session.user.id);
   const sessionPrefix = `${workspaceId}_`;
   const gateway = createGatewayClient();
   try {
@@ -53,14 +53,15 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const session = await getAuthSession(request.headers);
+  if (!session) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const body = await request.json().catch(() => ({})) as {
     sessionId?: unknown;
-    workspaceId?: unknown;
   };
-  const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : "";
-  if (!WORKSPACE_ID_PATTERN.test(workspaceId)) {
-    return Response.json({ error: "A valid workspace is required." }, { status: 400 });
-  }
+  const workspaceId = workspaceIdForUser(session.user.id);
   const requestedId = typeof body.sessionId === "string" ? body.sessionId : "";
   const sessionId = requestedId || randomUUID();
   if (!SESSION_ID_PATTERN.test(sessionId)) {

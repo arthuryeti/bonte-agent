@@ -19,6 +19,7 @@ const nextConfig = {
     "deepagents",
     "langchain",
     "pdfkit",
+    "pg",
     "sharp",
     "ws"
   ],

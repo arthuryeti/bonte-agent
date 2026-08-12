@@ -1,21 +1,15 @@
 services:
-  postgres:
-    image: postgres:17-alpine
-    restart: unless-stopped
+  migrate:
+    exclude_from_hc: true
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      target: migration
+    restart: "no"
     environment:
-      POSTGRES_DB: "${POSTGRES_DB:-crm_agent}"
-      POSTGRES_USER: "${POSTGRES_USER:-crm_agent}"
-      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Coolify}"
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    expose:
-      - "5432"
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the Coolify PostgreSQL internal URL}"
+      DATABASE_SSL: "${DATABASE_SSL:-false}"
+      DATABASE_SSL_REJECT_UNAUTHORIZED: "${DATABASE_SSL_REJECT_UNAUTHORIZED:-true}"
 
   gateway:
     build:
@@ -25,17 +19,14 @@ services:
     init: true
     stop_grace_period: 30s
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       NODE_ENV: production
 
-      DATABASE_HOST: postgres
-      DATABASE_PORT: "5432"
-      DATABASE_NAME: "${POSTGRES_DB:-crm_agent}"
-      DATABASE_USER: "${POSTGRES_USER:-crm_agent}"
-      DATABASE_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in Coolify}"
-      DATABASE_SSL: "false"
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the Coolify PostgreSQL internal URL}"
+      DATABASE_SSL: "${DATABASE_SSL:-false}"
+      DATABASE_SSL_REJECT_UNAUTHORIZED: "${DATABASE_SSL_REJECT_UNAUTHORIZED:-true}"
       DATABASE_POOL_MAX: "${DATABASE_POOL_MAX:-10}"
 
       LLM_PROVIDER: "${LLM_PROVIDER:?Set LLM_PROVIDER in Coolify}"
@@ -136,6 +127,15 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
+
+      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the Coolify PostgreSQL internal URL}"
+      DATABASE_SSL: "${DATABASE_SSL:-false}"
+      DATABASE_SSL_REJECT_UNAUTHORIZED: "${DATABASE_SSL_REJECT_UNAUTHORIZED:-true}"
+      DATABASE_POOL_MAX: "${DATABASE_POOL_MAX:-10}"
+
+      BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in Coolify}"
+      BETTER_AUTH_URL: "${BETTER_AUTH_URL:?Set BETTER_AUTH_URL to the public web URL}"
+
       GATEWAY_WS_URL: ws://gateway:8787/ws
       GATEWAY_WEB_TOKEN: "${GATEWAY_WEB_TOKEN:?Set GATEWAY_WEB_TOKEN in Coolify}"
     healthcheck:
@@ -148,6 +148,5 @@ services:
       - "3000"
 
 volumes:
-  postgres-data:
   whatsapp-auth:
   agent-output:

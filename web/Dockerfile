@@ -5,6 +5,13 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
+FROM dependencies AS migration
+
+WORKDIR /app/web
+COPY web ./
+
+CMD ["npm", "run", "db:migrate"]
+
 FROM dependencies AS build
 
 WORKDIR /app
@@ -13,7 +20,9 @@ COPY src/gateway/crm-ui-types.ts ./src/gateway/crm-ui-types.ts
 COPY src/gateway/web-event-cursor.ts ./src/gateway/web-event-cursor.ts
 
 WORKDIR /app/web
-RUN npm run build
+RUN BETTER_AUTH_SECRET=build-only-secret-that-is-never-used-at-runtime \
+    BETTER_AUTH_URL=http://localhost:3000 \
+    npm run build
 
 FROM node:22-bookworm-slim AS runtime
 
@@ -26,6 +35,7 @@ WORKDIR /app
 COPY --from=build --chown=node:node /app/web/.next/standalone ./
 COPY --from=build --chown=node:node /app/web/public ./web/public
 COPY --from=build --chown=node:node /app/web/.next/static ./web/.next/static
+COPY --from=build --chown=node:node /app/web/drizzle ./drizzle
 
 USER node
 

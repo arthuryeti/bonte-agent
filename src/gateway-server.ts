@@ -17,7 +17,7 @@ import { describeResolvedProvider } from "./providers/factory.js";
  *  - TELEGRAM_ALLOWED_USERS→ optional comma-separated user IDs
  *  - WHATSAPP_AUTH_DIR     → optional auth state directory (default: .whatsapp-auth)
  *  - WHATSAPP_MODE         → bot (default) or self-chat
- *  - DATABASE_URL          → optional PostgreSQL connection string for durable chats
+ *  - DATABASE_URL          → PostgreSQL connection string (required in production)
  *
  *  Plus all LLM_PROVIDER / CRM auth vars from .env.example
  */

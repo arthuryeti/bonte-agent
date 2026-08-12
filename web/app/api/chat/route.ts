@@ -8,21 +8,19 @@ import type {
   LeadListView,
   ScheduleFollowUpAction,
 } from "../../chat-types";
+import { getAuthSession, workspaceIdForUser } from "../../../lib/auth-session";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
 const MAX_MESSAGE_LENGTH = 8_000;
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const WORKSPACE_ID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const TURN_TIMEOUT_MS = 120_000;
 const GATEWAY_REQUEST_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 
 interface ChatRequestBody {
   id?: string;
   sessionId?: string;
-  workspaceId?: string;
   messages?: CrmChatMessage[];
   action?: unknown;
 }
@@ -109,12 +107,17 @@ async function withTurnTimeout(turn: Promise<void>): Promise<void> {
 }
 
 export async function GET(request: Request) {
+  const session = await getAuthSession(request.headers);
+  if (!session) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const url = new URL(request.url);
   const sessionId = url.searchParams.get("sessionId") ?? "";
-  const workspaceId = url.searchParams.get("workspaceId") ?? "";
-  if (!SESSION_ID_PATTERN.test(sessionId) || !WORKSPACE_ID_PATTERN.test(workspaceId)) {
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
     return Response.json({ error: "A valid session is required." }, { status: 400 });
   }
+  const workspaceId = workspaceIdForUser(session.user.id);
   const gatewaySessionId = `${workspaceId}_${sessionId}`;
 
   const gateway = new GatewayRpcClient(
@@ -155,11 +158,16 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const session = await getAuthSession(request.headers);
+  if (!session) {
+    return Response.json({ error: "Authentication required." }, { status: 401 });
+  }
+
   const body = (await request.json()) as ChatRequestBody;
   const latestMessage = body.messages?.at(-1);
   const text = latestMessage?.role === "user" ? getMessageText(latestMessage).trim() : "";
   const sessionId = body.sessionId ?? body.id ?? "";
-  const workspaceId = body.workspaceId ?? "";
+  const workspaceId = workspaceIdForUser(session.user.id);
   const action = body.action === undefined
     ? undefined
     : parseScheduleFollowUpAction(body.action);
@@ -167,7 +175,7 @@ export async function POST(request: Request) {
     ? latestMessage.id
     : crypto.randomUUID();
 
-  if (!SESSION_ID_PATTERN.test(sessionId) || !WORKSPACE_ID_PATTERN.test(workspaceId)) {
+  if (!SESSION_ID_PATTERN.test(sessionId)) {
     return Response.json({ error: "A valid session is required." }, { status: 400 });
   }
   const gatewaySessionId = `${workspaceId}_${sessionId}`;
