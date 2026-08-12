@@ -1,16 +1,4 @@
 services:
-  migrate:
-    exclude_from_hc: true
-    build:
-      context: .
-      dockerfile: web/Dockerfile
-      target: migration
-    restart: "no"
-    environment:
-      DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the Coolify PostgreSQL internal URL}"
-      DATABASE_SSL: "${DATABASE_SSL:-false}"
-      DATABASE_SSL_REJECT_UNAUTHORIZED: "${DATABASE_SSL_REJECT_UNAUTHORIZED:-true}"
-
   gateway:
     build:
       context: .
@@ -18,9 +6,6 @@ services:
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
     environment:
       NODE_ENV: production
 

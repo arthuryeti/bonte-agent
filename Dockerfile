@@ -9,9 +9,11 @@ COPY tsconfig.json ./
 COPY src ./src
 COPY test ./test
 
-RUN npm test \
-    && npm run build \
-    && npm prune --omit=dev
+# Coolify exposes configured build arguments to RUN instructions. Keep unit
+# tests isolated from the production database URL injected during deployment.
+RUN NODE_ENV=test DATABASE_URL= DATABASE_HOST= npm test
+RUN npm run build
+RUN npm prune --omit=dev
 
 FROM node:22-bookworm-slim AS runtime
 

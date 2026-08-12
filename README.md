@@ -71,9 +71,13 @@ npm run db:generate
 npm run db:check
 ```
 
-Use `npm run db:migrate` when applying migrations manually. The Coolify stack
-runs the same command in a one-shot migration service before starting the
-gateway.
+Apply migrations manually from a trusted machine before the initial deployment
+and before deploying any release that adds a migration:
+
+```bash
+cd web
+DATABASE_URL="$PRODUCTION_DATABASE_URL" npm run db:migrate
+```
 
 ```text
 Browser (AI SDK) → Next.js route → JSON-RPC/WebSocket gateway → CRM agent
@@ -136,10 +140,10 @@ Internet → web:3000 → gateway:8787 → LLM + CRM
           └─ gateway_messages (full history + CRM parts)
 ```
 
-Only the Next.js `web` service should receive a public domain. The `gateway` and
-one-shot `migrate` services stay private. PostgreSQL is a first-class Coolify
-database resource with its own lifecycle, storage, backups, and internal URL;
-it is not created or deleted with the application stack.
+Only the Next.js `web` service should receive a public domain. The `gateway`
+service stays private. PostgreSQL is a first-class Coolify database resource
+with its own lifecycle, storage, backups, and internal URL; it is not created
+or deleted with the application stack.
 
 ### Create the Coolify resource
 
@@ -157,7 +161,7 @@ it is not created or deleted with the application stack.
    cannot alter it. Keep `DATABASE_SSL=false` for Coolify's private network;
    enable SSL only when using a URL that requires it.
 6. Assign your public HTTPS domain only to the `web` service on port `3000`.
-   Do not assign domains to `gateway` or `migrate`.
+   Do not assign a domain to `gateway`.
 7. Fill in the remaining environment variables detected from the Compose file.
    At a minimum, set:
 
@@ -174,11 +178,14 @@ it is not created or deleted with the application stack.
    image build.
 9. Keep the Compose application at one gateway replica. Telegram long polling
    and a WhatsApp linked-device session each require a single active owner.
-10. Deploy. The `migrate` service applies all pending Drizzle migrations and
-    must complete successfully before the gateway starts.
-11. Create the first account at `/signup` after the initial deployment. The web
+10. Before the first deployment, run `npm run db:migrate` from `web/` on your
+    laptop with `DATABASE_URL` pointing to the production database. Repeat this
+    before deploying any release that adds a migration. Use a secure tunnel or
+    temporary restricted database access if the Coolify database is private.
+11. Deploy.
+12. Create the first account at `/signup` after the initial deployment. The web
    app requires a valid session for both the chat page and its server APIs.
-12. Enable **Auto Deploy** under the resource's advanced settings.
+13. Enable **Auto Deploy** under the resource's advanced settings.
 
 ### Moving data from the old Compose database
 
@@ -204,9 +211,9 @@ replacing or truncating their rows.
 
 The gateway image runs the test suite and TypeScript build, while the web image
 runs the Next.js production build, before a deployment can start. Startup
-ordering is `migrate → gateway → web`. The gateway refuses to start in
-production without a database and verifies that the Drizzle-managed chat and
-message tables exist, preventing an accidental in-memory deployment.
+ordering is `gateway → web`. The gateway refuses to start in production without
+a database and verifies that the Drizzle-managed chat and message tables exist,
+so manual migrations must finish before deployment.
 
 For WhatsApp, open the first deployment's runtime logs and scan the pairing QR
 code. The `whatsapp-auth` volume preserves that pairing across deployments.

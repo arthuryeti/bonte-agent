@@ -5,13 +5,6 @@ WORKDIR /app/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci
 
-FROM dependencies AS migration
-
-WORKDIR /app/web
-COPY web ./
-
-CMD ["npm", "run", "db:migrate"]
-
 FROM dependencies AS build
 
 WORKDIR /app
