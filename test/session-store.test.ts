@@ -18,24 +18,24 @@ function userMessage(chatId: string, text: string): MessageEvent {
 }
 
 describe("gateway session storage", () => {
-  it("refuses an in-memory fallback in production", async () => {
-    const previousNodeEnv = process.env.NODE_ENV;
-    process.env.NODE_ENV = "production";
+  it("refuses an implicit in-memory fallback", async () => {
     const store = new SessionStore({ databaseUrl: "", databaseHost: "" });
     try {
       await assert.rejects(
         store.connect(),
-        /DATABASE_URL is required in production/,
+        /DATABASE_URL or DATABASE_HOST is required/,
       );
     } finally {
-      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = previousNodeEnv;
       await store.close();
     }
   });
 
   it("indexes, titles, and clears in-memory sessions", async () => {
-    const store = new SessionStore({ databaseUrl: "", databaseHost: "" });
+    const store = new SessionStore({
+      databaseUrl: "",
+      databaseHost: "",
+      allowInMemory: true,
+    });
     await store.connect();
     await store.ensureSession("web", "memory-chat");
     await store.addUserMessage(userMessage("memory-chat", "Show my newest CRM leads"));

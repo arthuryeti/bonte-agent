@@ -1,9 +1,9 @@
 /**
  * Durable per-chat session storage.
  *
- * PostgreSQL is used when DATABASE_URL or DATABASE_HOST is configured. Drizzle
- * owns the production schema and migrations; the in-memory fallback keeps
- * local development and unit tests lightweight.
+ * PostgreSQL is the canonical runtime store. Drizzle owns its schema and
+ * migrations; an explicit in-memory mode keeps isolated unit tests lightweight
+ * without allowing a real gateway to start ephemerally by accident.
  */
 
 import { Pool, type PoolClient } from "pg";
@@ -53,6 +53,8 @@ export interface SessionStoreOptions {
   databaseSsl?: boolean;
   databaseSslRejectUnauthorized?: boolean;
   maxConnections?: number;
+  /** Test-only escape hatch. Runtime gateways must use durable storage. */
+  allowInMemory?: boolean;
 }
 
 interface SessionRow {
@@ -123,6 +125,7 @@ export class SessionStore {
       maxConnections:
         options.maxConnections ??
         positiveInteger(process.env.DATABASE_POOL_MAX, 10),
+      allowInMemory: options.allowInMemory ?? false,
     };
   }
 
@@ -131,12 +134,10 @@ export class SessionStore {
       return;
     }
     if (!this.options.databaseUrl && !this.options.databaseHost) {
-      if (process.env.NODE_ENV === "production") {
-        throw new Error(
-          "DATABASE_URL is required in production so chats and messages are durable",
-        );
-      }
-      return;
+      if (this.options.allowInMemory) return;
+      throw new Error(
+        "DATABASE_URL or DATABASE_HOST is required so chats and messages are durable",
+      );
     }
     this.pool = new Pool({
       ...(this.options.databaseUrl

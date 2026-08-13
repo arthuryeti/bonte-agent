@@ -255,16 +255,21 @@ platformRegistry.register({
 
 export class Gateway {
   private adapters = new Map<string, BasePlatformAdapter>();
-  private sessions = new SessionStore();
+  private sessions: SessionStore;
   private agent: DeepAgent;
   private config: GatewayConfig;
   private purgeInterval?: NodeJS.Timeout;
   private liveAgentStreamingDisabled = false;
   private activeTurns = new Map<string, AbortController>();
 
-  constructor(agent: DeepAgent, config: GatewayConfig) {
+  constructor(
+    agent: DeepAgent,
+    config: GatewayConfig,
+    sessions: SessionStore = new SessionStore()
+  ) {
     this.agent = agent;
     this.config = config;
+    this.sessions = sessions;
   }
 
   async start(): Promise<void> {

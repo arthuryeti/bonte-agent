@@ -4,6 +4,7 @@ import type { DeepAgent } from "deepagents";
 import WebSocket from "ws";
 import { Gateway } from "../src/gateway/gateway.js";
 import { WebAdapter, type WebGatewayEvent } from "../src/gateway/platforms/web.js";
+import { SessionStore } from "../src/gateway/session.js";
 import { GatewayWebSocketServer } from "../src/gateway/websocket-server.js";
 
 interface RpcFrame {
@@ -26,9 +27,15 @@ afterEach(async () => {
 });
 
 async function startTestGateway(agent: DeepAgent) {
-  const gateway = new Gateway(agent, {
-    platforms: [{ enabled: true, platform: "web" }],
-  });
+  const gateway = new Gateway(
+    agent,
+    { platforms: [{ enabled: true, platform: "web" }] },
+    new SessionStore({
+      databaseUrl: "",
+      databaseHost: "",
+      allowInMemory: true,
+    })
+  );
   await gateway.start();
   const adapter = gateway.getAdapter<WebAdapter>("web");
   assert.ok(adapter);
