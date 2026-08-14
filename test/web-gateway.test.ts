@@ -203,6 +203,37 @@ describe("web JSON-RPC gateway", () => {
     client.socket.close();
   });
 
+  it("adds compact lead-card guidance without persisting it as the user message", async () => {
+    let agentMessage = "";
+    const fakeAgent = {
+      async invoke(input: { messages: Array<{ content: string }> }) {
+        agentMessage = input.messages.at(-1)?.content ?? "";
+        return { messages: [{ role: "assistant", content: "I found 20 of 184 leads." }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "compact-leads" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "compact-leads",
+      text: "Show my latest leads",
+      compact_lead_results: true,
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    assert.match(agentMessage, /interactive lead card/);
+    assert.match(agentMessage, /Show my latest leads/);
+    const history = await client.request<{
+      messages: Array<{ role: string; content: string }>;
+    }>("session.history", { session_id: "compact-leads" });
+    assert.equal(history.messages[0]?.content, "Show my latest leads");
+    client.socket.close();
+  });
+
   it("does not append the final answer twice after a streamed tool preamble", async () => {
     const preamble = "I’ll fetch the latest leads for you. ";
     const finalAnswer = "Here are the latest leads, newest first.";
@@ -389,9 +420,19 @@ describe("web JSON-RPC gateway", () => {
 
     const leadEvent = client.events.find((event) => event.type === "lead.list.available");
     assert.ok(leadEvent);
-    const leadData = (leadEvent.payload as { data?: { leads?: Array<{ id: string }> } }).data;
+    const leadPayload = leadEvent.payload as {
+      data?: { leads?: Array<{ id: string }> };
+      run_id?: string;
+    };
+    const leadData = leadPayload.data;
     assert.equal(leadData?.leads?.[0]?.id, "lead-1");
-    assert.ok(client.events.some((event) => event.type === "tool.start"));
+    assert.equal(leadPayload.run_id, "crm-run-1");
+    const toolStart = client.events.find((event) => event.type === "tool.start");
+    assert.deepEqual(toolStart?.payload, {
+      run_id: "crm-run-1",
+      tool_name: "call_crm_api",
+      endpoint: "/api/Leads/List",
+    });
     assert.ok(client.events.some((event) => event.type === "tool.complete"));
 
     const history = await client.request<{

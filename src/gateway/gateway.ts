@@ -72,6 +72,9 @@ class AgentTraceCallback extends BaseCallbackHandler {
       this.webAdapter.publishToolStart(this.chatId, {
         run_id: runId,
         tool_name: toolName,
+        endpoint: toolName === "call_crm_api"
+          ? this.crmEndpoint(input)
+          : undefined,
       });
     }
 
@@ -100,7 +103,7 @@ class AgentTraceCallback extends BaseCallbackHandler {
       if (leadList) {
         this.leadListOutputs.push(leadList);
         if (this.webAdapter && this.chatId) {
-          this.webAdapter.publishLeadList(this.chatId, leadList);
+          this.webAdapter.publishLeadList(this.chatId, leadList, runId);
         }
       }
     }
@@ -183,6 +186,15 @@ class AgentTraceCallback extends BaseCallbackHandler {
     }
 
     return this.truncate(input, 160);
+  }
+
+  private crmEndpoint(input: string): string | undefined {
+    const parsed = this.parseInput(input);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const endpoint = (parsed as Record<string, unknown>).endpoint;
+    return typeof endpoint === "string" ? endpoint : undefined;
   }
 
   private parseInput(input: string): unknown {

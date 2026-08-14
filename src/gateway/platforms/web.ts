@@ -261,7 +261,7 @@ export class WebAdapter extends BasePlatformAdapter {
 
   publishToolStart(
     chatId: string,
-    payload: { run_id: string; tool_name: string }
+    payload: { run_id: string; tool_name: string; endpoint?: string }
   ): void {
     this.publish({
       type: "tool.start",
@@ -295,12 +295,12 @@ export class WebAdapter extends BasePlatformAdapter {
     });
   }
 
-  publishLeadList(chatId: string, data: LeadListView): void {
+  publishLeadList(chatId: string, data: LeadListView, runId?: string): void {
     this.publish({
       type: "lead.list.available",
       session_id: chatId,
       turn_id: this.activeTurns.get(chatId)?.turnId,
-      payload: { id: data.id, data },
+      payload: { id: data.id, data, run_id: runId },
     });
   }
 

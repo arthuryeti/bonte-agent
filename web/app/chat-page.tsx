@@ -20,8 +20,10 @@ import type {
 import {
   LeadDrawer,
   LeadResults,
+  ToolStatus,
   type FollowUpValues,
 } from "./lead-results";
+import { compactLeadMessageText } from "./lead-message";
 import { authClient } from "../lib/auth-client";
 
 const MarkdownMessage = dynamic(
@@ -480,12 +482,18 @@ export default function ChatPage({ user }: ChatPageProps) {
               ) : (
                 <div className="messages">
                   {messages.map((message) => {
-                    const hasLeadResults = message.parts.some(
+                    const leadListPart = message.parts.find(
                       (part) => part.type === "data-lead-list"
+                    );
+                    const hasRichResult = message.parts.some(
+                      (part) =>
+                        part.type === "data-lead-list" ||
+                        (part.type === "data-tool-status" &&
+                          part.data.status !== "complete")
                     );
                     return (
                       <article
-                        className={`message ${message.role}${hasLeadResults ? " has-rich-result" : ""}`}
+                        className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}`}
                         key={message.id}
                       >
                         <div className="message-label">
@@ -494,14 +502,18 @@ export default function ChatPage({ user }: ChatPageProps) {
                         <div className="bubble">
                           {message.parts.map((part, index) => {
                             if (part.type === "text") {
-                              return part.text ? (
+                              const content =
+                                message.role === "assistant" && leadListPart
+                                  ? compactLeadMessageText(part.text, leadListPart.data)
+                                  : part.text;
+                              return content ? (
                                 message.role === "assistant" ? (
                                   <MarkdownMessage
-                                    content={part.text}
+                                    content={content}
                                     key={`${message.id}-text-${index}`}
                                   />
                                 ) : (
-                                  <p key={`${message.id}-text-${index}`}>{part.text}</p>
+                                  <p key={`${message.id}-text-${index}`}>{content}</p>
                                 )
                               ) : null;
                             }
@@ -511,6 +523,14 @@ export default function ChatPage({ user }: ChatPageProps) {
                                   data={part.data}
                                   key={part.id || `${message.id}-leads-${index}`}
                                   onSelect={setSelectedLead}
+                                />
+                              );
+                            }
+                            if (part.type === "data-tool-status") {
+                              return (
+                                <ToolStatus
+                                  data={part.data}
+                                  key={part.id || `${message.id}-tool-${index}`}
                                 />
                               );
                             }

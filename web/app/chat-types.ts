@@ -6,8 +6,14 @@ import type {
 
 export type { LeadListView, LeadView };
 
+export interface CrmToolStatusView {
+  status: "running" | "complete" | "error";
+  label: string;
+}
+
 export type CrmChatDataParts = {
   "lead-list": LeadListView;
+  "tool-status": CrmToolStatusView;
 };
 
 export type CrmChatMessage = UIMessage<unknown, CrmChatDataParts>;

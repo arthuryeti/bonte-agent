@@ -3,14 +3,23 @@
 import {
   FormEvent,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
-import type { LeadListView, LeadView } from "./chat-types";
+import type {
+  CrmToolStatusView,
+  LeadListView,
+  LeadView,
+} from "./chat-types";
 
 interface LeadResultsProps {
   data: LeadListView;
   onSelect: (lead: LeadView) => void;
+}
+
+interface ToolStatusProps {
+  data: CrmToolStatusView;
 }
 
 export interface FollowUpValues {
@@ -38,6 +47,8 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
   minute: "2-digit",
 });
+
+const LEAD_PREVIEW_LIMIT = 3;
 
 function formatDate(value?: string, includeTime = false): string | undefined {
   if (!value) return undefined;
@@ -96,7 +107,28 @@ function phoneLinks(phone?: string) {
   };
 }
 
+export function ToolStatus({ data }: ToolStatusProps) {
+  if (data.status === "complete") return null;
+
+  const isError = data.status === "error";
+  return (
+    <div
+      className={`tool-status ${data.status}`}
+      role={isError ? "alert" : "status"}
+      aria-live="polite"
+    >
+      <span className="tool-status-indicator" aria-hidden="true">
+        {isError ? "!" : null}
+      </span>
+      <span>{data.label}</span>
+    </div>
+  );
+}
+
 export function LeadResults({ data, onSelect }: LeadResultsProps) {
+  const [expanded, setExpanded] = useState(false);
+  const listId = useId();
+
   if (data.leads.length === 0) {
     return (
       <section className="lead-results lead-results-empty" aria-label="Lead results">
@@ -105,25 +137,33 @@ export function LeadResults({ data, onSelect }: LeadResultsProps) {
     );
   }
 
+  const canExpand = data.leads.length > LEAD_PREVIEW_LIMIT;
+  const visibleLeads = expanded
+    ? data.leads
+    : data.leads.slice(0, LEAD_PREVIEW_LIMIT);
+  const hiddenLeadCount = data.leads.length - visibleLeads.length;
+
   return (
     <section className="lead-results" aria-label="Lead results">
       <div className="lead-results-head">
         <div>
-          <p className="eyebrow">CRM leads</p>
-          <h2>{data.returnedRecords} {data.returnedRecords === 1 ? "result" : "results"}</h2>
+          <p className="eyebrow">CRM result</p>
+          <h2>
+            {data.returnedRecords} {data.returnedRecords === 1 ? "lead" : "leads"}
+          </h2>
         </div>
-        <p>
+        <span className="lead-results-total">
           {data.totalRecords > data.returnedRecords
-            ? `${data.totalRecords} total · showing latest`
-            : "Live CRM result"}
-        </p>
+            ? `${data.totalRecords} total`
+            : "Live"}
+        </span>
       </div>
 
-      <div className="lead-list">
-        {data.leads.map((lead) => {
+      <div className="lead-list" id={listId}>
+        {visibleLeads.map((lead) => {
           const name = leadName(lead);
-          const activity = lead.events[0];
           const date = formatDate(lead.updatedAt || lead.createdAt);
+          const price = formatPrice(lead.salePrice);
           return (
             <button
               className="lead-row"
@@ -132,7 +172,6 @@ export function LeadResults({ data, onSelect }: LeadResultsProps) {
               onClick={() => onSelect(lead)}
               aria-label={`View ${name}`}
             >
-              <span className="lead-avatar" aria-hidden="true">{initials(name)}</span>
               <span className="lead-primary">
                 <span className="lead-name-line">
                   <strong>{name}</strong>
@@ -142,24 +181,36 @@ export function LeadResults({ data, onSelect }: LeadResultsProps) {
                     </span>
                   ) : null}
                 </span>
-                <span className="lead-subtitle">
-                  {lead.title !== name ? lead.title : activity?.title || lead.origin || `Lead ${lead.id}`}
-                </span>
                 <span className="lead-meta">
-                  {lead.agents[0]?.name ? <span>{lead.agents[0].name}</span> : null}
+                  {lead.title !== name ? <span>{lead.title}</span> : null}
                   {lead.properties[0]?.reference ? <span>{lead.properties[0].reference}</span> : null}
+                  {lead.agents[0]?.name ? <span>{lead.agents[0].name}</span> : null}
                   {date ? <span>{date}</span> : null}
                 </span>
               </span>
               <span className="lead-row-end">
-                {formatPrice(lead.salePrice) ? <strong>{formatPrice(lead.salePrice)}</strong> : null}
+                {price ? <strong>{price}</strong> : null}
                 <span aria-hidden="true">›</span>
               </span>
             </button>
           );
         })}
       </div>
-      {data.truncated ? (
+      {canExpand ? (
+        <div className="lead-results-actions">
+          <button
+            type="button"
+            onClick={() => setExpanded((current) => !current)}
+            aria-expanded={expanded}
+            aria-controls={listId}
+          >
+            {expanded ? "Collapse list" : `Show ${hiddenLeadCount} more`}
+          </button>
+          {expanded && data.truncated ? (
+            <span>Showing the newest matches. Refine your request for a narrower result.</span>
+          ) : null}
+        </div>
+      ) : data.truncated ? (
         <p className="lead-results-foot">Refine your request to narrow the full result set.</p>
       ) : null}
     </section>

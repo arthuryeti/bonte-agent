@@ -4,6 +4,7 @@ import {
 } from "ai";
 import { GatewayRpcClient, type GatewayEvent } from "./gateway-client";
 import type {
+  CrmToolStatusView,
   CrmChatMessage,
   LeadListView,
   ScheduleFollowUpAction,
@@ -17,6 +18,8 @@ const MAX_MESSAGE_LENGTH = 8_000;
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const TURN_TIMEOUT_MS = 120_000;
 const GATEWAY_REQUEST_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
+const CRM_TOOL_NAME = "call_crm_api";
+const LEAD_LIST_ENDPOINT = "/api/Leads/List";
 
 interface ChatRequestBody {
   id?: string;
@@ -90,6 +93,12 @@ function leadListPart(part: GatewayHistoryDataPart) {
 function payloadString(event: GatewayEvent, key: string): string {
   const value = event.payload?.[key];
   return typeof value === "string" ? value : "";
+}
+
+function crmToolStatusLabel(endpoint: string): string {
+  return endpoint === LEAD_LIST_ENDPOINT
+    ? "Fetching CRM leads…"
+    : "Fetching CRM data…";
 }
 
 async function withTurnTimeout(turn: Promise<void>): Promise<void> {
@@ -223,7 +232,19 @@ export async function POST(request: Request) {
         if (event.session_id !== gatewaySessionId) return;
         if (acceptedTurnId && event.turn_id && event.turn_id !== acceptedTurnId) return;
 
-        if (event.type === "message.delta" && !replayPersistedResponse) {
+        if (event.type === "tool.start" && !replayPersistedResponse) {
+          const runId = payloadString(event, "run_id");
+          const toolName = payloadString(event, "tool_name");
+          if (!runId || toolName !== CRM_TOOL_NAME) return;
+          writer.write({
+            type: "data-tool-status",
+            id: runId,
+            data: {
+              status: "running",
+              label: crmToolStatusLabel(payloadString(event, "endpoint")),
+            } satisfies CrmToolStatusView,
+          });
+        } else if (event.type === "message.delta" && !replayPersistedResponse) {
           const delta = payloadString(event, "delta");
           if (!delta) return;
           startText();
@@ -235,12 +256,47 @@ export async function POST(request: Request) {
         ) {
           const data = event.payload?.data;
           const id = payloadString(event, "id");
+          const runId = payloadString(event, "run_id");
           if (!id || !isRecord(data)) return;
+          if (runId) {
+            writer.write({
+              type: "data-tool-status",
+              id: runId,
+              data: {
+                status: "complete",
+                label: "",
+              } satisfies CrmToolStatusView,
+            });
+          }
           hasContent = true;
           writer.write({
             type: "data-lead-list",
             id,
             data: data as unknown as LeadListView,
+          });
+        } else if (event.type === "tool.complete" && !replayPersistedResponse) {
+          const runId = payloadString(event, "run_id");
+          const toolName = payloadString(event, "tool_name");
+          if (!runId || toolName !== CRM_TOOL_NAME) return;
+          writer.write({
+            type: "data-tool-status",
+            id: runId,
+            data: {
+              status: "complete",
+              label: "",
+            } satisfies CrmToolStatusView,
+          });
+        } else if (event.type === "tool.error" && !replayPersistedResponse) {
+          const runId = payloadString(event, "run_id");
+          const toolName = payloadString(event, "tool_name");
+          if (!runId || toolName !== CRM_TOOL_NAME) return;
+          writer.write({
+            type: "data-tool-status",
+            id: runId,
+            data: {
+              status: "error",
+              label: "CRM request failed.",
+            } satisfies CrmToolStatusView,
           });
         } else if (
           event.type === "attachment.available" &&
@@ -306,6 +362,7 @@ export async function POST(request: Request) {
                 session_id: gatewaySessionId,
                 request_id: requestId,
                 text,
+                compact_lead_results: true,
               },
               request.signal,
             );
