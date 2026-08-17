@@ -807,14 +807,11 @@ button {
 .tool-status {
   width: fit-content;
   max-width: 100%;
-  margin: 1px 4px;
-  padding: 8px 11px;
+  margin: 7px 4px 0;
+  padding: 0 2px;
   display: flex;
   align-items: center;
-  gap: 8px;
-  border: 1px solid #dde3dd;
-  border-radius: 999px;
-  background: #f7f9f6;
+  gap: 7px;
   color: #647068;
   font-size: 11px;
   font-weight: 650;
@@ -822,8 +819,8 @@ button {
 }
 
 .tool-status-indicator {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: #5f846f;
@@ -831,6 +828,9 @@ button {
 }
 
 .tool-status.error {
+  padding: 6px 8px;
+  border: 1px solid #efd7d1;
+  border-radius: 999px;
   border-color: #efd7d1;
   background: #fff8f6;
   color: #8b5148;

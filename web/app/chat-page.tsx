@@ -485,58 +485,67 @@ export default function ChatPage({ user }: ChatPageProps) {
                     const leadListPart = message.parts.find(
                       (part) => part.type === "data-lead-list"
                     );
-                    const hasRichResult = message.parts.some(
+                    const toolStatusParts = message.parts.filter(
+                      (part) => part.type === "data-tool-status"
+                    );
+                    const isWaitingForTool = toolStatusParts.some(
+                      (part) => part.data.status === "running"
+                    );
+                    const hasBubbleContent = message.parts.some(
                       (part) =>
                         part.type === "data-lead-list" ||
-                        (part.type === "data-tool-status" &&
-                          part.data.status !== "complete")
+                        (part.type === "text" && part.text.trim().length > 0)
                     );
+                    const hasRichResult = Boolean(leadListPart);
                     return (
                       <article
-                        className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}`}
+                        className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}${isWaitingForTool && !hasBubbleContent ? " thinking" : ""}`}
                         key={message.id}
                       >
                         <div className="message-label">
                           {message.role === "user" ? "You" : "Assistant"}
                         </div>
-                        <div className="bubble">
-                          {message.parts.map((part, index) => {
-                            if (part.type === "text") {
-                              const content =
-                                message.role === "assistant" && leadListPart
-                                  ? compactLeadMessageText(part.text, leadListPart.data)
-                                  : part.text;
-                              return content ? (
-                                message.role === "assistant" ? (
-                                  <MarkdownMessage
-                                    content={content}
-                                    key={`${message.id}-text-${index}`}
+                        {hasBubbleContent || isWaitingForTool ? (
+                          <div className="bubble">
+                            {isWaitingForTool && !hasBubbleContent ? (
+                              <><i /><i /><i /></>
+                            ) : null}
+                            {message.parts.map((part, index) => {
+                              if (part.type === "text") {
+                                const content =
+                                  message.role === "assistant" && leadListPart
+                                    ? compactLeadMessageText(part.text, leadListPart.data)
+                                    : part.text;
+                                return content ? (
+                                  message.role === "assistant" ? (
+                                    <MarkdownMessage
+                                      content={content}
+                                      key={`${message.id}-text-${index}`}
+                                    />
+                                  ) : (
+                                    <p key={`${message.id}-text-${index}`}>{content}</p>
+                                  )
+                                ) : null;
+                              }
+                              if (part.type === "data-lead-list") {
+                                return (
+                                  <LeadResults
+                                    data={part.data}
+                                    key={part.id || `${message.id}-leads-${index}`}
+                                    onSelect={setSelectedLead}
                                   />
-                                ) : (
-                                  <p key={`${message.id}-text-${index}`}>{content}</p>
-                                )
-                              ) : null;
-                            }
-                            if (part.type === "data-lead-list") {
-                              return (
-                                <LeadResults
-                                  data={part.data}
-                                  key={part.id || `${message.id}-leads-${index}`}
-                                  onSelect={setSelectedLead}
-                                />
-                              );
-                            }
-                            if (part.type === "data-tool-status") {
-                              return (
-                                <ToolStatus
-                                  data={part.data}
-                                  key={part.id || `${message.id}-tool-${index}`}
-                                />
-                              );
-                            }
-                            return null;
-                          })}
-                        </div>
+                                );
+                              }
+                              return null;
+                            })}
+                          </div>
+                        ) : null}
+                        {toolStatusParts.map((part, index) => (
+                          <ToolStatus
+                            data={part.data}
+                            key={part.id || `${message.id}-tool-${index}`}
+                          />
+                        ))}
                       </article>
                     );
                   })}
@@ -544,6 +553,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                     <article className="message assistant thinking" aria-label="Assistant is thinking">
                       <div className="message-label">Assistant</div>
                       <div className="bubble"><i /><i /><i /></div>
+                      <ToolStatus data={{ status: "running", label: "Thinking…" }} />
                     </article>
                   ) : null}
                 </div>

@@ -97,7 +97,7 @@ function payloadString(event: GatewayEvent, key: string): string {
 
 function crmToolStatusLabel(endpoint: string): string {
   return endpoint === LEAD_LIST_ENDPOINT
-    ? "Fetching CRM leads…"
+    ? "Fetching latest leads…"
     : "Fetching CRM data…";
 }
 
