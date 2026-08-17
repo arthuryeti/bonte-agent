@@ -31,6 +31,10 @@ interface LeadDrawerProps {
   lead: LeadView;
   disabled: boolean;
   onClose: () => void;
+  onSelectProperty: (
+    property: LeadView["properties"][number],
+    index: number,
+  ) => void;
   onRefresh: (lead: LeadView) => void;
   onSchedule: (lead: LeadView, values: FollowUpValues) => void;
 }
@@ -221,6 +225,7 @@ export function LeadDrawer({
   lead,
   disabled,
   onClose,
+  onSelectProperty,
   onRefresh,
   onSchedule,
 }: LeadDrawerProps) {
@@ -335,13 +340,22 @@ export function LeadDrawer({
             {lead.properties.length > 0 ? (
               <div className="property-stack">
                 {lead.properties.map((property, index) => (
-                  <div className="property-item" key={property.id || property.reference || index}>
+                  <button
+                    className="property-item"
+                    key={property.id || property.reference || index}
+                    type="button"
+                    onClick={() => onSelectProperty(property, index)}
+                    aria-label={`View property ${property.reference || index + 1}`}
+                  >
                     <div>
                       <strong>{property.reference || `Property ${index + 1}`}</strong>
                       <span>{property.address || "Address not available"}</span>
                     </div>
-                    {formatPrice(property.price) ? <strong>{formatPrice(property.price)}</strong> : null}
-                  </div>
+                    <span className="property-item-end">
+                      {formatPrice(property.price) ? <strong>{formatPrice(property.price)}</strong> : null}
+                      <span aria-hidden="true">›</span>
+                    </span>
+                  </button>
                 ))}
               </div>
             ) : <p className="empty-copy">No related property was included in this result.</p>}

@@ -7,7 +7,7 @@ import type {
   SendOptions,
   SentMessageRef,
 } from "../types.js";
-import type { LeadListView } from "../crm-ui.js";
+import type { LeadListView, PropertyListView } from "../crm-ui.js";
 
 export type WebGatewayEventType =
   | "turn.start"
@@ -20,6 +20,7 @@ export type WebGatewayEventType =
   | "tool.complete"
   | "tool.error"
   | "lead.list.available"
+  | "property.list.available"
   | "attachment.available"
   | "location.available";
 
@@ -298,6 +299,15 @@ export class WebAdapter extends BasePlatformAdapter {
   publishLeadList(chatId: string, data: LeadListView, runId?: string): void {
     this.publish({
       type: "lead.list.available",
+      session_id: chatId,
+      turn_id: this.activeTurns.get(chatId)?.turnId,
+      payload: { id: data.id, data, run_id: runId },
+    });
+  }
+
+  publishPropertyList(chatId: string, data: PropertyListView, runId?: string): void {
+    this.publish({
+      type: "property.list.available",
       session_id: chatId,
       turn_id: this.activeTurns.get(chatId)?.turnId,
       payload: { id: data.id, data, run_id: runId },

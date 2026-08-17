@@ -21,7 +21,7 @@ export interface ChatMessage {
 }
 
 export interface ChatMessageDataPart {
-  type: "lead-list";
+  type: "lead-list" | "property-list";
   id: string;
   data: unknown;
 }
@@ -86,7 +86,7 @@ function asDataParts(value: unknown): ChatMessageDataPart[] | undefined {
     if (!part || typeof part !== "object") return false;
     const record = part as Record<string, unknown>;
     return (
-      record.type === "lead-list" &&
+      (record.type === "lead-list" || record.type === "property-list") &&
       typeof record.id === "string" &&
       "data" in record
     );

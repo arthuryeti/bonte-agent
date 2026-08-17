@@ -203,7 +203,7 @@ describe("web JSON-RPC gateway", () => {
     client.socket.close();
   });
 
-  it("adds compact lead-card guidance without persisting it as the user message", async () => {
+  it("adds compact CRM-card guidance without persisting it as the user message", async () => {
     let agentMessage = "";
     const fakeAgent = {
       async invoke(input: { messages: Array<{ content: string }> }) {
@@ -218,7 +218,7 @@ describe("web JSON-RPC gateway", () => {
     const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
       session_id: "compact-leads",
       text: "Show my latest leads",
-      compact_lead_results: true,
+      compact_crm_results: true,
     });
     await waitForEvent(
       client.events,
@@ -226,6 +226,7 @@ describe("web JSON-RPC gateway", () => {
     );
 
     assert.match(agentMessage, /interactive lead card/);
+    assert.match(agentMessage, /interactive property card/);
     assert.match(agentMessage, /Show my latest leads/);
     const history = await client.request<{
       messages: Array<{ role: string; content: string }>;
@@ -439,6 +440,77 @@ describe("web JSON-RPC gateway", () => {
       messages: Array<{ data_parts?: Array<{ type: string; data: unknown }> }>;
     }>("session.history", { session_id: "lead-session" });
     assert.equal(history.messages.at(-1)?.data_parts?.[0]?.type, "lead-list");
+    client.socket.close();
+  });
+
+  it("publishes normalized property data and retains it in session history", async () => {
+    const fakeAgent = {
+      async invoke(
+        _input: unknown,
+        options: { callbacks?: Array<{
+          handleToolStart(tool: unknown, input: string, runId: string): void;
+          handleToolEnd(output: unknown, runId: string): void;
+        }> }
+      ) {
+        const callback = options.callbacks?.[0];
+        callback?.handleToolStart(
+          { name: "call_crm_api" },
+          JSON.stringify({ endpoint: "/api/Property/ListProperties", method: "POST" }),
+          "property-run-1"
+        );
+        callback?.handleToolEnd(
+          JSON.stringify({
+            PropertyList: [{
+              propertyId: 42,
+              reference: "LX-100",
+              typeLocale: "Apartment",
+              price: 475000,
+              currency: "EUR",
+            }],
+            Count: 1,
+            _pagination: { totalRecords: 1, returnedRecords: 1, truncated: false },
+          }),
+          "property-run-1"
+        );
+        return { messages: [{ role: "assistant", content: "I found one property." }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "property-session" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "property-session",
+      text: "Find available properties",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    const propertyEvent = client.events.find(
+      (event) => event.type === "property.list.available"
+    );
+    assert.ok(propertyEvent);
+    const propertyPayload = propertyEvent.payload as {
+      data?: { properties?: Array<{ id: string; reference: string }> };
+      run_id?: string;
+    };
+    assert.deepEqual(propertyPayload.data?.properties?.[0], {
+      id: "42",
+      reference: "LX-100",
+      title: "Apartment",
+      propertyType: "Apartment",
+      price: "475000",
+      currency: "EUR",
+      features: [],
+    });
+    assert.equal(propertyPayload.run_id, "property-run-1");
+
+    const history = await client.request<{
+      messages: Array<{ data_parts?: Array<{ type: string; data: unknown }> }>;
+    }>("session.history", { session_id: "property-session" });
+    assert.equal(history.messages.at(-1)?.data_parts?.[0]?.type, "property-list");
     client.socket.close();
   });
 

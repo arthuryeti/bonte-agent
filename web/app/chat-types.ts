@@ -2,9 +2,11 @@ import type { UIMessage } from "ai";
 import type {
   LeadListView,
   LeadView,
+  PropertyListView,
+  PropertyView,
 } from "../../src/gateway/crm-ui-types";
 
-export type { LeadListView, LeadView };
+export type { LeadListView, LeadView, PropertyListView, PropertyView };
 
 export interface CrmToolStatusView {
   status: "running" | "complete" | "error";
@@ -13,6 +15,7 @@ export interface CrmToolStatusView {
 
 export type CrmChatDataParts = {
   "lead-list": LeadListView;
+  "property-list": PropertyListView;
   "tool-status": CrmToolStatusView;
 };
 

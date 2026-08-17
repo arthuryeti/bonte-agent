@@ -55,3 +55,50 @@ export interface LeadListView {
   truncated: boolean;
   generatedAt: string;
 }
+
+export interface PropertyAgentView {
+  id?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+}
+
+export interface PropertyView {
+  id: string;
+  internalId?: string;
+  reference: string;
+  title: string;
+  status?: string;
+  businessType?: string;
+  propertyType?: string;
+  condition?: string;
+  typology?: string;
+  bedrooms?: number;
+  bathrooms?: number;
+  price?: string;
+  currency?: string;
+  priceVisible?: boolean;
+  sold?: boolean;
+  visibleOnWebsite?: boolean;
+  livingArea?: string;
+  totalArea?: string;
+  plotArea?: string;
+  address?: string;
+  location?: string;
+  description?: string;
+  energyRating?: string;
+  photoUrl?: string;
+  agent?: PropertyAgentView;
+  features: string[];
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PropertyListView {
+  id: string;
+  properties: PropertyView[];
+  totalRecords: number;
+  returnedRecords: number;
+  truncated: boolean;
+  generatedAt: string;
+}

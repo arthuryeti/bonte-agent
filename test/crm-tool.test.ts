@@ -4,6 +4,7 @@ import { shapeLeadListResult } from "../src/tools/crm.js";
 import {
   extractCrmToolError,
   normalizeLeadListToolOutput,
+  normalizePropertyListToolOutput,
 } from "../src/gateway/crm-ui.js";
 
 describe("CRM lead result shaping", () => {
@@ -238,5 +239,89 @@ describe("CRM lead browser normalization", () => {
       propertyCount: 1,
       eventCount: 1,
     });
+  });
+});
+
+describe("CRM property browser normalization", () => {
+  it("exposes compact property cards with safe detail fields", () => {
+    const result = normalizePropertyListToolOutput(JSON.stringify({
+      PropertyList: [
+        {
+          propertyId: 42,
+          internalId: "internal-42",
+          reference: "LX-100",
+          status: "Active",
+          businessTypeLocale: "For sale",
+          typeLocale: "Apartment",
+          typology: "T2",
+          bedrooms: 2,
+          bathrooms: 1,
+          price: 475000,
+          currency: "EUR",
+          living_area: 91.5,
+          location: {
+            address: "Rua Example 10",
+            cityName: "Lisbon",
+            regionName: "Lisbon",
+          },
+          locale: [
+            { language: "pt", title: "Apartamento", short: "Descrição PT" },
+            { language: "en", title: "City apartment", short: "Sunny apartment" },
+          ],
+          photos: [
+            { Url: "javascript:alert(1)", SortOrder: 1 },
+            { Url: "https://images.example.com/property.jpg", SortOrder: 2 },
+          ],
+          listing_agent: [
+            { id: 7, Name: "Marta", Email: "marta@example.com" },
+          ],
+          features_list: ["Lift", "Balcony"],
+        },
+      ],
+      Count: 17,
+      _pagination: { returnedRecords: 1, totalRecords: 17, truncated: true },
+    }));
+
+    assert.ok(result);
+    assert.equal(result.totalRecords, 17);
+    assert.equal(result.returnedRecords, 1);
+    assert.equal(result.truncated, true);
+    assert.deepEqual(result.properties[0], {
+      id: "42",
+      internalId: "internal-42",
+      reference: "LX-100",
+      title: "City apartment",
+      status: "Active",
+      businessType: "For sale",
+      propertyType: "Apartment",
+      condition: undefined,
+      typology: "T2",
+      bedrooms: 2,
+      bathrooms: 1,
+      price: "475000",
+      currency: "EUR",
+      priceVisible: undefined,
+      sold: undefined,
+      visibleOnWebsite: undefined,
+      livingArea: "91.5",
+      totalArea: undefined,
+      plotArea: undefined,
+      address: "Rua Example 10",
+      location: "Lisbon",
+      description: "Sunny apartment",
+      energyRating: undefined,
+      photoUrl: "https://images.example.com/property.jpg",
+      agent: { id: "7", name: "Marta", email: "marta@example.com", phone: undefined },
+      features: ["Lift", "Balcony"],
+      createdAt: undefined,
+      updatedAt: undefined,
+    });
+  });
+
+  it("ignores non-property CRM responses", () => {
+    assert.equal(
+      normalizePropertyListToolOutput(JSON.stringify({ Opportunities: [] })),
+      undefined,
+    );
   });
 });

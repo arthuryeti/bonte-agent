@@ -7,6 +7,7 @@ import type {
   CrmToolStatusView,
   CrmChatMessage,
   LeadListView,
+  PropertyListView,
   ScheduleFollowUpAction,
 } from "../../chat-types";
 import { getAuthSession, workspaceIdForUser } from "../../../lib/auth-session";
@@ -20,6 +21,7 @@ const TURN_TIMEOUT_MS = 120_000;
 const GATEWAY_REQUEST_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const CRM_TOOL_NAME = "call_crm_api";
 const LEAD_LIST_ENDPOINT = "/api/Leads/List";
+const PROPERTY_LIST_ENDPOINT = "/api/Property/ListProperties";
 
 interface ChatRequestBody {
   id?: string;
@@ -90,15 +92,26 @@ function leadListPart(part: GatewayHistoryDataPart) {
   };
 }
 
+function propertyListPart(part: GatewayHistoryDataPart) {
+  if (part.type !== "property-list" || !part.id || !isRecord(part.data)) {
+    return undefined;
+  }
+  return {
+    type: "data-property-list" as const,
+    id: part.id,
+    data: part.data as unknown as PropertyListView,
+  };
+}
+
 function payloadString(event: GatewayEvent, key: string): string {
   const value = event.payload?.[key];
   return typeof value === "string" ? value : "";
 }
 
 function crmToolStatusLabel(endpoint: string): string {
-  return endpoint === LEAD_LIST_ENDPOINT
-    ? "Fetching latest leads…"
-    : "Fetching CRM data…";
+  if (endpoint === LEAD_LIST_ENDPOINT) return "Fetching latest leads…";
+  if (endpoint === PROPERTY_LIST_ENDPOINT) return "Fetching properties…";
+  return "Fetching CRM data…";
 }
 
 function crmToolErrorLabel(message: string): string {
@@ -157,7 +170,7 @@ export async function GET(request: Request) {
         .filter((message) => message.role === "user" || message.role === "assistant")
         .map((message, index): CrmChatMessage => {
           const dataParts = (message.data_parts ?? [])
-            .map(leadListPart)
+            .map((part) => leadListPart(part) ?? propertyListPart(part))
             .filter((part): part is NonNullable<typeof part> => Boolean(part));
           return {
             id: message.platform_message_id || `${sessionId}-${index}`,
@@ -284,6 +297,30 @@ export async function POST(request: Request) {
             id,
             data: data as unknown as LeadListView,
           });
+        } else if (
+          event.type === "property.list.available" &&
+          !replayPersistedResponse
+        ) {
+          const data = event.payload?.data;
+          const id = payloadString(event, "id");
+          const runId = payloadString(event, "run_id");
+          if (!id || !isRecord(data)) return;
+          if (runId) {
+            writer.write({
+              type: "data-tool-status",
+              id: runId,
+              data: {
+                status: "complete",
+                label: "",
+              } satisfies CrmToolStatusView,
+            });
+          }
+          hasContent = true;
+          writer.write({
+            type: "data-property-list",
+            id,
+            data: data as unknown as PropertyListView,
+          });
         } else if (event.type === "tool.complete" && !replayPersistedResponse) {
           const runId = payloadString(event, "run_id");
           const toolName = payloadString(event, "tool_name");
@@ -373,7 +410,7 @@ export async function POST(request: Request) {
                 session_id: gatewaySessionId,
                 request_id: requestId,
                 text,
-                compact_lead_results: true,
+                compact_crm_results: true,
               },
               request.signal,
             );
@@ -417,7 +454,7 @@ export async function POST(request: Request) {
             });
           }
           for (const dataPart of persisted.data_parts ?? []) {
-            const part = leadListPart(dataPart);
+            const part = leadListPart(dataPart) ?? propertyListPart(dataPart);
             if (!part) continue;
             hasContent = true;
             writer.write(part);

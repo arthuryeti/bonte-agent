@@ -5,6 +5,9 @@ import type {
   LeadListView,
   LeadPropertyView,
   LeadView,
+  PropertyAgentView,
+  PropertyListView,
+  PropertyView,
 } from "./crm-ui-types.js";
 
 export type {
@@ -14,6 +17,9 @@ export type {
   LeadListView,
   LeadPropertyView,
   LeadView,
+  PropertyAgentView,
+  PropertyListView,
+  PropertyView,
 } from "./crm-ui-types.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -49,6 +55,17 @@ function asCount(value: unknown, fallback: number): number {
     : fallback;
 }
 
+function asNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function asBoolean(value: unknown): boolean | undefined {
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function asSafeUrl(...values: unknown[]): string | undefined {
   const candidate = firstString(...values);
   if (!candidate) return undefined;
@@ -63,7 +80,12 @@ function asSafeUrl(...values: unknown[]): string | undefined {
 }
 
 function parseToolOutput(output: unknown): unknown {
-  if (isRecord(output) && Array.isArray(output.Opportunities)) return output;
+  if (
+    isRecord(output) &&
+    (Array.isArray(output.Opportunities) || Array.isArray(output.PropertyList))
+  ) {
+    return output;
+  }
 
   const text =
     typeof output === "string"
@@ -115,6 +137,117 @@ function normalizeProperty(value: unknown): LeadPropertyView | undefined {
     address,
     price: firstString(value.Price),
     updatedAt: firstString(value.LastUpdate),
+  };
+}
+
+function normalizePropertyAgent(value: unknown): PropertyAgentView | undefined {
+  if (!isRecord(value)) return undefined;
+  const agent = {
+    id: firstString(value.id, value.Id, value.AgentID, value.AgentId),
+    name: firstString(value.Name, value.name, value.AgentName),
+    email: firstString(value.Email, value.email),
+    phone: firstString(value.Cellphone, value.Phone, value.phone),
+  };
+  return Object.values(agent).some(Boolean) ? agent : undefined;
+}
+
+function normalizePropertyLocation(value: unknown): {
+  address?: string;
+  location?: string;
+} {
+  if (!isRecord(value)) return {};
+  const address = firstString(value.address, value.Address);
+  const parts = [
+    firstString(value.zone, value.Zonename),
+    firstString(value.localityName, value.Locality),
+    firstString(value.cityName, value.City),
+    firstString(value.regionName, value.Region),
+    firstString(value.Country),
+  ].filter((part): part is string => Boolean(part));
+  return {
+    address,
+    location: [...new Set(parts)].join(", ") || address,
+  };
+}
+
+function normalizePropertyPhoto(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  return asSafeUrl(value.Url, value.URL, value.url);
+}
+
+function normalizeListedProperty(
+  value: unknown,
+  index: number
+): PropertyView | undefined {
+  if (!isRecord(value)) return undefined;
+  const id = firstString(value.propertyId, value.PropertyID, value.PropertyId, value.id);
+  const reference = firstString(value.reference, value.Reference);
+  if (!id && !reference) return undefined;
+
+  const locales = Array.isArray(value.locale) ? value.locale.filter(isRecord) : [];
+  const preferredLocale =
+    locales.find((locale) => /^(?:en|eng)$/i.test(firstString(locale.language) ?? "")) ??
+    locales[0];
+  const location = normalizePropertyLocation(value.location);
+  const propertyType = firstString(value.typeLocale, value.type, value.PropertyType);
+  const title = firstString(preferredLocale?.title, propertyType, reference) ||
+    `Property ${index + 1}`;
+  const photos = (Array.isArray(value.photos) ? value.photos : [])
+    .filter(isRecord)
+    .sort((left, right) =>
+      (asNumber(left.SortOrder) ?? Number.MAX_SAFE_INTEGER) -
+      (asNumber(right.SortOrder) ?? Number.MAX_SAFE_INTEGER)
+    );
+  const photoUrl = photos
+    .map(normalizePropertyPhoto)
+    .find((url): url is string => Boolean(url));
+  const agents = compact(
+    Array.isArray(value.listing_agent) ? value.listing_agent : [value.listing_agent],
+    normalizePropertyAgent
+  );
+  const rawFeatures = Array.isArray(value.features_list)
+    ? value.features_list
+    : Array.isArray(value.features_list_enum)
+      ? value.features_list_enum
+      : [];
+  const features = rawFeatures
+    .map(asString)
+    .filter((feature): feature is string => Boolean(feature))
+    .slice(0, 12);
+
+  return {
+    id: id || reference || `property-${index + 1}`,
+    internalId: firstString(value.internalId, value.InternalId),
+    reference: reference || id || `Property ${index + 1}`,
+    title,
+    status: firstString(value.status, value.Status),
+    businessType: firstString(
+      value.businessTypeLocale,
+      value.businessType,
+      value.BusinessType
+    ),
+    propertyType,
+    condition: firstString(value.conditionTypeLocale, value.condition_type),
+    typology: firstString(value.typology),
+    bedrooms: asNumber(value.bedrooms),
+    bathrooms: asNumber(value.bathrooms),
+    price: firstString(value.price, value.Price),
+    currency: firstString(value.currency, value.priceprefixhelper),
+    priceVisible: asBoolean(value.price_visible),
+    sold: asBoolean(value.sold),
+    visibleOnWebsite: asBoolean(value.visibleOnWebsite),
+    livingArea: firstString(value.living_area),
+    totalArea: firstString(value.total_area),
+    plotArea: firstString(value.plot_area),
+    address: location.address,
+    location: location.location,
+    description: firstString(preferredLocale?.short, preferredLocale?.description)?.slice(0, 600),
+    energyRating: firstString(value.energy_rating),
+    photoUrl,
+    agent: agents[0],
+    features,
+    createdAt: firstString(value.createDate),
+    updatedAt: firstString(value.lastChangeDate, value.LastUpdate),
   };
 }
 
@@ -215,6 +348,38 @@ export function normalizeLeadListToolOutput(output: unknown): LeadListView | und
       typeof metadata.truncated === "boolean"
         ? metadata.truncated
         : totalRecords > leads.length,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+/** Converts a CRM property-list tool result into a compact, safe web payload. */
+export function normalizePropertyListToolOutput(
+  output: unknown
+): PropertyListView | undefined {
+  const parsed = parseToolOutput(output);
+  if (!isRecord(parsed) || !Array.isArray(parsed.PropertyList)) return undefined;
+
+  const sourceProperties = parsed.PropertyList;
+  const properties: PropertyView[] = [];
+  for (const [index, propertyValue] of sourceProperties.slice(0, 100).entries()) {
+    const property = normalizeListedProperty(propertyValue, index);
+    if (property) properties.push(property);
+  }
+  const pagination = isRecord(parsed._pagination) ? parsed._pagination : {};
+  const totalRecords = asCount(
+    pagination.totalRecords ?? parsed.Count,
+    sourceProperties.length
+  );
+
+  return {
+    id: `property-list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    properties,
+    totalRecords,
+    returnedRecords: properties.length,
+    truncated:
+      pagination.truncated === true ||
+      sourceProperties.length > properties.length ||
+      totalRecords > properties.length,
     generatedAt: new Date().toISOString(),
   };
 }

@@ -29,7 +29,9 @@ import {
 import {
   extractCrmToolError,
   normalizeLeadListToolOutput,
+  normalizePropertyListToolOutput,
   type LeadListView,
+  type PropertyListView,
 } from "./crm-ui.js";
 import { TurnDeliveryLedger } from "./turn-delivery-ledger.js";
 import type {
@@ -50,6 +52,7 @@ class AgentTraceCallback extends BaseCallbackHandler {
   private toolRuns = new Map<string, string>();
   private documentToolOutputs: unknown[] = [];
   private leadListOutputs: LeadListView[] = [];
+  private propertyListOutputs: PropertyListView[] = [];
 
   constructor(
     private readonly webAdapter?: WebAdapter,
@@ -123,6 +126,14 @@ class AgentTraceCallback extends BaseCallbackHandler {
           this.webAdapter.publishLeadList(this.chatId, leadList, runId);
         }
       }
+
+      const propertyList = normalizePropertyListToolOutput(output);
+      if (propertyList) {
+        this.propertyListOutputs.push(propertyList);
+        if (this.webAdapter && this.chatId) {
+          this.webAdapter.publishPropertyList(this.chatId, propertyList, runId);
+        }
+      }
     }
 
     if (toolName === "task") {
@@ -147,6 +158,10 @@ class AgentTraceCallback extends BaseCallbackHandler {
 
   getLeadListOutputs(): readonly LeadListView[] {
     return this.leadListOutputs;
+  }
+
+  getPropertyListOutputs(): readonly PropertyListView[] {
+    return this.propertyListOutputs;
   }
 
   handleToolError(err: unknown, runId: string): void {
@@ -517,11 +532,18 @@ export class Gateway {
         event.chatId,
         delivery.text || responseText,
         event.id ? `assistant:${event.id}` : undefined,
-        traceCallback.getLeadListOutputs().map((data) => ({
-          type: "lead-list" as const,
-          id: data.id,
-          data,
-        }))
+        [
+          ...traceCallback.getLeadListOutputs().map((data) => ({
+            type: "lead-list" as const,
+            id: data.id,
+            data,
+          })),
+          ...traceCallback.getPropertyListOutputs().map((data) => ({
+            type: "property-list" as const,
+            id: data.id,
+            data,
+          })),
+        ]
       );
 
       // Send back to originating platform

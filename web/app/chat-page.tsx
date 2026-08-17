@@ -15,6 +15,7 @@ import {
 import type {
   CrmChatMessage,
   LeadView,
+  PropertyView,
   ScheduleFollowUpAction,
 } from "./chat-types";
 import {
@@ -24,6 +25,8 @@ import {
   type FollowUpValues,
 } from "./lead-results";
 import { compactLeadMessageText } from "./lead-message";
+import { compactPropertyMessageText } from "./property-message";
+import { PropertyDrawer, PropertyResults } from "./property-results";
 import { authClient } from "../lib/auth-client";
 
 const MarkdownMessage = dynamic(
@@ -116,6 +119,24 @@ function formatRecentTime(value: string): string {
   }).format(date);
 }
 
+function propertyFromLead(
+  property: LeadView["properties"][number],
+  index = 0,
+): PropertyView {
+  const id = property.id || property.reference || `related-property-${index + 1}`;
+  const reference = property.reference || property.id || `Property ${index + 1}`;
+  return {
+    id,
+    reference,
+    title: reference,
+    address: property.address,
+    location: property.address,
+    price: property.price,
+    updatedAt: property.updatedAt,
+    features: [],
+  };
+}
+
 export default function ChatPage({ user }: ChatPageProps) {
   const router = useRouter();
   const [input, setInput] = useState("");
@@ -127,6 +148,7 @@ export default function ChatPage({ user }: ChatPageProps) {
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [selectedLead, setSelectedLead] = useState<LeadView>();
+  const [selectedProperty, setSelectedProperty] = useState<PropertyView>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { messages, sendMessage, setMessages, status, error, stop, clearError } =
     useChat<CrmChatMessage>();
@@ -135,6 +157,8 @@ export default function ChatPage({ user }: ChatPageProps) {
     () => recentChats.find((chat) => chat.id === sessionId),
     [recentChats, sessionId]
   );
+  const lastMessage = messages.at(-1);
+  const showStandaloneThinking = isWorking && lastMessage?.role !== "assistant";
 
   useEffect(() => {
     let cancelled = false;
@@ -252,6 +276,7 @@ export default function ChatPage({ user }: ChatPageProps) {
       setMessages([]);
       setInput("");
       setSelectedLead(undefined);
+      setSelectedProperty(undefined);
       setSidebarOpen(false);
     } catch {
       const chat = createRecentChat();
@@ -260,6 +285,7 @@ export default function ChatPage({ user }: ChatPageProps) {
       setMessages([]);
       setInput("");
       setSelectedLead(undefined);
+      setSelectedProperty(undefined);
       setSidebarOpen(false);
     } finally {
       setIsCreatingChat(false);
@@ -291,15 +317,43 @@ export default function ChatPage({ user }: ChatPageProps) {
     setSessionId(chatId);
     setInput("");
     setSelectedLead(undefined);
+    setSelectedProperty(undefined);
     setSidebarOpen(false);
   }, [clearError, sessionId, setMessages, stop]);
 
   const closeLead = useCallback(() => setSelectedLead(undefined), []);
+  const closeProperty = useCallback(() => setSelectedProperty(undefined), []);
+
+  const selectLead = useCallback((lead: LeadView) => {
+    setSelectedProperty(undefined);
+    setSelectedLead(lead);
+  }, []);
+
+  const selectProperty = useCallback((property: PropertyView) => {
+    setSelectedLead(undefined);
+    setSelectedProperty(property);
+  }, []);
+
+  const selectRelatedProperty = useCallback((
+    property: LeadView["properties"][number],
+    index: number,
+  ) => {
+    selectProperty(propertyFromLead(property, index));
+  }, [selectProperty]);
 
   const refreshLead = useCallback((lead: LeadView) => {
     closeLead();
     submitMessage(`Fetch the latest full CRM details for lead ID ${lead.id}.`);
   }, [closeLead, submitMessage]);
+
+  const refreshProperty = useCallback((property: PropertyView) => {
+    closeProperty();
+    const hasDistinctId = property.id && property.id !== property.reference;
+    const identifier = hasDistinctId
+      ? `ID ${property.id}`
+      : `reference ${property.reference}`;
+    submitMessage(`Fetch the latest full CRM details for property ${identifier}.`);
+  }, [closeProperty, submitMessage]);
 
   const scheduleFollowUp = useCallback((
     lead: LeadView,
@@ -442,7 +496,7 @@ export default function ChatPage({ user }: ChatPageProps) {
               </button>
               <div>
                 <p className="title">{activeChat?.title || DEFAULT_CHAT_TITLE}</p>
-                <p className="status"><span aria-hidden="true" /> Ready to help</p>
+                <p className="status"><span aria-hidden="true" /> {isWorking ? "Working…" : "Ready to help"}</p>
               </div>
             </div>
             <button
@@ -461,7 +515,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                 <div className="chat-loading" aria-label="Loading conversation">
                   <i /><i /><i />
                 </div>
-              ) : messages.length === 0 ? (
+              ) : messages.length === 0 && !isWorking ? (
                 <div className="welcome">
                   <div className="welcome-mark" aria-hidden="true">B</div>
                   <h1>How can I help?</h1>
@@ -481,33 +535,39 @@ export default function ChatPage({ user }: ChatPageProps) {
                 </div>
               ) : (
                 <div className="messages">
-                  {messages.map((message) => {
+                  {messages.map((message, messageIndex) => {
                     const leadListPart = message.parts.find(
                       (part) => part.type === "data-lead-list"
+                    );
+                    const propertyListPart = message.parts.find(
+                      (part) => part.type === "data-property-list"
                     );
                     const toolStatusParts = message.parts.filter(
                       (part) => part.type === "data-tool-status"
                     );
-                    const isWaitingForTool = toolStatusParts.some(
-                      (part) => part.data.status === "running"
-                    );
                     const hasBubbleContent = message.parts.some(
                       (part) =>
                         part.type === "data-lead-list" ||
+                        part.type === "data-property-list" ||
                         (part.type === "text" && part.text.trim().length > 0)
                     );
-                    const hasRichResult = Boolean(leadListPart);
+                    const showThinkingBubble =
+                      message.role === "assistant" &&
+                      isWorking &&
+                      messageIndex === messages.length - 1 &&
+                      !hasBubbleContent;
+                    const hasRichResult = Boolean(leadListPart || propertyListPart);
                     return (
                       <article
-                        className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}${isWaitingForTool && !hasBubbleContent ? " thinking" : ""}`}
+                        className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}${showThinkingBubble ? " thinking" : ""}`}
                         key={message.id}
                       >
                         <div className="message-label">
                           {message.role === "user" ? "You" : "Assistant"}
                         </div>
-                        {hasBubbleContent || isWaitingForTool ? (
+                        {hasBubbleContent || showThinkingBubble ? (
                           <div className="bubble">
-                            {isWaitingForTool && !hasBubbleContent ? (
+                            {showThinkingBubble ? (
                               <><i /><i /><i /></>
                             ) : null}
                             {message.parts.map((part, index) => {
@@ -515,7 +575,9 @@ export default function ChatPage({ user }: ChatPageProps) {
                                 const content =
                                   message.role === "assistant" && leadListPart
                                     ? compactLeadMessageText(part.text, leadListPart.data)
-                                    : part.text;
+                                    : message.role === "assistant" && propertyListPart
+                                      ? compactPropertyMessageText(part.text, propertyListPart.data)
+                                      : part.text;
                                 return content ? (
                                   message.role === "assistant" ? (
                                     <MarkdownMessage
@@ -532,7 +594,16 @@ export default function ChatPage({ user }: ChatPageProps) {
                                   <LeadResults
                                     data={part.data}
                                     key={part.id || `${message.id}-leads-${index}`}
-                                    onSelect={setSelectedLead}
+                                    onSelect={selectLead}
+                                  />
+                                );
+                              }
+                              if (part.type === "data-property-list") {
+                                return (
+                                  <PropertyResults
+                                    data={part.data}
+                                    key={part.id || `${message.id}-properties-${index}`}
+                                    onSelect={selectProperty}
                                   />
                                 );
                               }
@@ -549,7 +620,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                       </article>
                     );
                   })}
-                  {status === "submitted" ? (
+                  {showStandaloneThinking ? (
                     <article className="message assistant thinking" aria-label="Assistant is thinking">
                       <div className="message-label">Assistant</div>
                       <div className="bubble"><i /><i /><i /></div>
@@ -602,8 +673,17 @@ export default function ChatPage({ user }: ChatPageProps) {
           lead={selectedLead}
           disabled={isWorking}
           onClose={closeLead}
+          onSelectProperty={selectRelatedProperty}
           onRefresh={refreshLead}
           onSchedule={scheduleFollowUp}
+        />
+      ) : null}
+      {selectedProperty ? (
+        <PropertyDrawer
+          property={selectedProperty}
+          disabled={isWorking}
+          onClose={closeProperty}
+          onRefresh={refreshProperty}
         />
       ) : null}
     </main>
