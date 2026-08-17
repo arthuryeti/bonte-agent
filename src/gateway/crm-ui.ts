@@ -78,6 +78,13 @@ function parseToolOutput(output: unknown): unknown {
   }
 }
 
+/** Returns a handled CRM tool failure that LangChain reports via tool-end. */
+export function extractCrmToolError(output: unknown): string | undefined {
+  const parsed = parseToolOutput(output);
+  if (!isRecord(parsed) || parsed._error !== true) return undefined;
+  return asString(parsed.message) || "CRM request failed.";
+}
+
 function serialize(value: unknown): string {
   try {
     return JSON.stringify(value);

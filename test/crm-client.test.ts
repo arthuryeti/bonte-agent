@@ -4,6 +4,7 @@ import { callCrmApi } from "../src/client/crm-client.js";
 
 const originalFetch = globalThis.fetch;
 const originalBaseUrl = process.env.CRM_BASE_URL;
+const originalBearerToken = process.env.CRM_BEARER_TOKEN;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -11,6 +12,11 @@ afterEach(() => {
     delete process.env.CRM_BASE_URL;
   } else {
     process.env.CRM_BASE_URL = originalBaseUrl;
+  }
+  if (originalBearerToken === undefined) {
+    delete process.env.CRM_BEARER_TOKEN;
+  } else {
+    process.env.CRM_BEARER_TOKEN = originalBearerToken;
   }
 });
 
@@ -55,5 +61,25 @@ describe("CRM client resilience", () => {
         }),
       /CRM API error: 403 Forbidden - request blocked by the CRM security service/
     );
+  });
+
+  it("sends CRM bearer tokens with the Bearer authorization scheme", async () => {
+    let authorization = "";
+    process.env.CRM_BEARER_TOKEN = "crm-token";
+    globalThis.fetch = async (_input, init) => {
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      return new Response(JSON.stringify({ Opportunities: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    await callCrmApi({
+      endpoint: "/api/Leads/List",
+      method: "POST",
+      body: { Language: "en" },
+    });
+
+    assert.equal(authorization, "Bearer crm-token");
   });
 });

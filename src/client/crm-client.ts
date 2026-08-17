@@ -131,7 +131,10 @@ function getAuthHeaders(): Record<string, string> {
 
   const bearerToken = process.env.CRM_BEARER_TOKEN;
   if (bearerToken) {
-    headers["Authorization"] = `Basic ${bearerToken}`;
+    const token = bearerToken.trim();
+    headers["Authorization"] = /^Bearer\s/i.test(token)
+      ? token
+      : `Bearer ${token}`;
   }
 
   return headers;

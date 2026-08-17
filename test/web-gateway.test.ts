@@ -442,6 +442,57 @@ describe("web JSON-RPC gateway", () => {
     client.socket.close();
   });
 
+  it("publishes handled CRM failures as tool errors", async () => {
+    const fakeAgent = {
+      async invoke(
+        _input: unknown,
+        options: { callbacks?: Array<{
+          handleToolStart(tool: unknown, input: string, runId: string): void;
+          handleToolEnd(output: unknown, runId: string): void;
+        }> }
+      ) {
+        const callback = options.callbacks?.[0];
+        callback?.handleToolStart(
+          { name: "call_crm_api" },
+          JSON.stringify({ endpoint: "/api/Leads/List", method: "POST" }),
+          "crm-error-run"
+        );
+        callback?.handleToolEnd(
+          JSON.stringify({
+            _error: true,
+            message: "CRM API error: 403 Forbidden - request blocked by the CRM security service",
+          }),
+          "crm-error-run"
+        );
+        return { messages: [{ role: "assistant", content: "CRM access is blocked." }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "crm-error-session" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "crm-error-session",
+      text: "Show my latest leads",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    const toolError = client.events.find((event) => event.type === "tool.error");
+    assert.deepEqual(toolError?.payload, {
+      run_id: "crm-error-run",
+      tool_name: "call_crm_api",
+      message: "CRM API error: 403 Forbidden - request blocked by the CRM security service",
+    });
+    assert.equal(
+      client.events.some((event) => event.type === "tool.complete"),
+      false
+    );
+    client.socket.close();
+  });
+
   it("validates and de-duplicates confirmed follow-up actions", async () => {
     let agentPrompt = "";
     const fakeAgent = {

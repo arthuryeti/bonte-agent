@@ -101,6 +101,16 @@ function crmToolStatusLabel(endpoint: string): string {
     : "Fetching CRM data…";
 }
 
+function crmToolErrorLabel(message: string): string {
+  if (/403|blocked|security service/i.test(message)) {
+    return "CRM access was blocked. Check the CRM security or API access settings.";
+  }
+  if (/401|unauthori[sz]ed|authentication/i.test(message)) {
+    return "CRM authentication failed. Check the configured CRM credentials.";
+  }
+  return "CRM request failed. Please try again.";
+}
+
 async function withTurnTimeout(turn: Promise<void>): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -290,12 +300,13 @@ export async function POST(request: Request) {
           const runId = payloadString(event, "run_id");
           const toolName = payloadString(event, "tool_name");
           if (!runId || toolName !== CRM_TOOL_NAME) return;
+          hasContent = true;
           writer.write({
             type: "data-tool-status",
             id: runId,
             data: {
               status: "error",
-              label: "CRM request failed.",
+              label: crmToolErrorLabel(payloadString(event, "message")),
             } satisfies CrmToolStatusView,
           });
         } else if (

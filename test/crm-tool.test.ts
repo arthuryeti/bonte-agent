@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { shapeLeadListResult } from "../src/tools/crm.js";
-import { normalizeLeadListToolOutput } from "../src/gateway/crm-ui.js";
+import {
+  extractCrmToolError,
+  normalizeLeadListToolOutput,
+} from "../src/gateway/crm-ui.js";
 
 describe("CRM lead result shaping", () => {
   it("returns the newest 20 leads by default with result metadata", () => {
@@ -164,6 +167,16 @@ describe("CRM lead result shaping", () => {
 });
 
 describe("CRM lead browser normalization", () => {
+  it("recognizes handled CRM failures returned through tool-end", () => {
+    assert.equal(
+      extractCrmToolError(JSON.stringify({
+        _error: true,
+        message: "CRM API error: 403 Forbidden",
+      })),
+      "CRM API error: 403 Forbidden"
+    );
+  });
+
   it("exposes a compact, safe component payload", () => {
     const result = normalizeLeadListToolOutput(JSON.stringify({
       Opportunities: [

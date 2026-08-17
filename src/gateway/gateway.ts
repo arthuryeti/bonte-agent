@@ -27,6 +27,7 @@ import {
   mimeTypeForDocument,
 } from "../media-delivery.js";
 import {
+  extractCrmToolError,
   normalizeLeadListToolOutput,
   type LeadListView,
 } from "./crm-ui.js";
@@ -99,6 +100,22 @@ class AgentTraceCallback extends BaseCallbackHandler {
     }
 
     if (toolName === "call_crm_api") {
+      const crmError = extractCrmToolError(output);
+      if (crmError) {
+        if (process.env.DEEPAGENT_TOOL_LOGS === "true") {
+          console.warn(`[DeepAgent] tool failed: ${toolName}: ${crmError}`);
+        }
+        if (this.webAdapter && this.chatId) {
+          this.webAdapter.publishToolError(this.chatId, {
+            run_id: runId,
+            tool_name: toolName,
+            message: crmError,
+          });
+        }
+        this.toolRuns.delete(runId);
+        return;
+      }
+
       const leadList = normalizeLeadListToolOutput(output);
       if (leadList) {
         this.leadListOutputs.push(leadList);
