@@ -37,6 +37,7 @@ export interface CrmPaginatedResponse extends CrmResponse {
 
 const DEFAULT_BASE_URL = "https://crmapi.casafaricrm.com";
 const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_USER_AGENT = "crm-deepagent/0.1.0";
 
 function getBaseUrl(): string {
   return process.env.CRM_BASE_URL?.trim() || DEFAULT_BASE_URL;
@@ -132,9 +133,11 @@ function getAuthHeaders(): Record<string, string> {
   const bearerToken = process.env.CRM_BEARER_TOKEN;
   if (bearerToken) {
     const token = bearerToken.trim();
-    headers["Authorization"] = /^Bearer\s/i.test(token)
+    // This legacy variable contains the CRM's raw Basic access token in the
+    // existing deployment. Preserve an explicit scheme when one is supplied.
+    headers["Authorization"] = /^(?:Basic|Bearer)\s/i.test(token)
       ? token
-      : `Bearer ${token}`;
+      : `Basic ${token}`;
   }
 
   return headers;
@@ -267,6 +270,7 @@ export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     Accept: "application/json",
+    "User-Agent": process.env.CRM_USER_AGENT?.trim() || DEFAULT_USER_AGENT,
     ...getAuthHeaders(),
   };
 

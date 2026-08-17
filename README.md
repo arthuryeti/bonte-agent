@@ -483,13 +483,16 @@ The CRM client supports three auth methods (configure in `.env`):
 
 - **API Key**: `CRM_API_KEY` → sent as `X-API-Key` header
 - **Basic Auth**: `CRM_USERNAME` + `CRM_PASSWORD`
-- **Bearer Token**: `CRM_BEARER_TOKEN`
+- **Access token**: `CRM_BEARER_TOKEN` keeps compatibility with the existing
+  CRM deployment: a raw token is sent with `Basic`; prefix the configured value
+  with `Bearer ` when a CRM environment explicitly requires Bearer auth.
 
 The production endpoint defaults to `https://crmapi.casafaricrm.com`. Override
 it with `CRM_BASE_URL` when using another CRM environment. Requests time out
 after 30 seconds by default; configure `CRM_TIMEOUT_MS` if needed. A Cloudflare
-403 means the deployment server's public IP must be allowed by the CRM's
-security configuration.
+403 can also indicate that the request lacks an accepted client identity. The
+client sends `CRM_USER_AGENT` (`crm-deepagent/0.1.0` by default); if a 403
+persists, verify the deployment server's public IP in the CRM security rules.
 
 ## Property PDF Brochures
 

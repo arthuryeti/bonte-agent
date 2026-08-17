@@ -5,6 +5,7 @@ import { callCrmApi } from "../src/client/crm-client.js";
 const originalFetch = globalThis.fetch;
 const originalBaseUrl = process.env.CRM_BASE_URL;
 const originalBearerToken = process.env.CRM_BEARER_TOKEN;
+const originalUserAgent = process.env.CRM_USER_AGENT;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -17,6 +18,11 @@ afterEach(() => {
     delete process.env.CRM_BEARER_TOKEN;
   } else {
     process.env.CRM_BEARER_TOKEN = originalBearerToken;
+  }
+  if (originalUserAgent === undefined) {
+    delete process.env.CRM_USER_AGENT;
+  } else {
+    process.env.CRM_USER_AGENT = originalUserAgent;
   }
 });
 
@@ -63,9 +69,33 @@ describe("CRM client resilience", () => {
     );
   });
 
-  it("sends CRM bearer tokens with the Bearer authorization scheme", async () => {
+  it("sends the legacy raw CRM token with Basic auth and an application user agent", async () => {
     let authorization = "";
+    let userAgent = "";
     process.env.CRM_BEARER_TOKEN = "crm-token";
+    globalThis.fetch = async (_input, init) => {
+      const headers = new Headers(init?.headers);
+      authorization = headers.get("authorization") ?? "";
+      userAgent = headers.get("user-agent") ?? "";
+      return new Response(JSON.stringify({ Opportunities: [] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    await callCrmApi({
+      endpoint: "/api/Leads/List",
+      method: "POST",
+      body: { Language: "en" },
+    });
+
+    assert.equal(authorization, "Basic crm-token");
+    assert.equal(userAgent, "crm-deepagent/0.1.0");
+  });
+
+  it("preserves an explicitly prefixed Bearer token", async () => {
+    let authorization = "";
+    process.env.CRM_BEARER_TOKEN = "Bearer crm-token";
     globalThis.fetch = async (_input, init) => {
       authorization = new Headers(init?.headers).get("authorization") ?? "";
       return new Response(JSON.stringify({ Opportunities: [] }), {

@@ -49,6 +49,7 @@ services:
       CRM_BEARER_TOKEN: "${CRM_BEARER_TOKEN:-}"
       CRM_BASE_URL: "${CRM_BASE_URL:-https://crmapi.casafaricrm.com}"
       CRM_TIMEOUT_MS: "${CRM_TIMEOUT_MS:-30000}"
+      CRM_USER_AGENT: "${CRM_USER_AGENT:-crm-deepagent/0.1.0}"
 
       TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
       TELEGRAM_ALLOWED_USERS: "${TELEGRAM_ALLOWED_USERS:-}"
