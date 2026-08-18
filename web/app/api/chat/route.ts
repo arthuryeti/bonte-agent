@@ -4,43 +4,36 @@ import {
 } from "ai";
 import { GatewayRpcClient, type GatewayEvent } from "./gateway-client";
 import type {
-  CrmToolStatusView,
   CrmChatMessage,
   LeadListView,
   PropertyListView,
   ScheduleFollowUpAction,
 } from "../../chat-types";
 import { getAuthSession, workspaceIdForUser } from "../../../lib/auth-session";
+import {
+  completedWorkingStatusPart,
+  persistedAssistantMessageForTurn,
+  payloadString,
+  selectRelevantDataParts,
+  temporaryStatusPartForEvent,
+  workingStatusPart,
+  type GatewayHistoryDataPart,
+  type GatewayHistoryMessage,
+} from "./turn-presentation";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const MAX_MESSAGE_LENGTH = 8_000;
 const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const TURN_TIMEOUT_MS = 120_000;
+const TURN_TIMEOUT_MS = 240_000;
 const GATEWAY_REQUEST_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
-const CRM_TOOL_NAME = "call_crm_api";
-const LEAD_LIST_ENDPOINT = "/api/Leads/List";
-const PROPERTY_LIST_ENDPOINT = "/api/Property/ListProperties";
 
 interface ChatRequestBody {
   id?: string;
   sessionId?: string;
   messages?: CrmChatMessage[];
   action?: unknown;
-}
-
-interface GatewayHistoryDataPart {
-  type?: string;
-  id?: string;
-  data?: unknown;
-}
-
-interface GatewayHistoryMessage {
-  role: "user" | "assistant" | "system";
-  content: string;
-  platform_message_id?: string;
-  data_parts?: GatewayHistoryDataPart[];
 }
 
 interface AcceptedTurn {
@@ -103,26 +96,8 @@ function propertyListPart(part: GatewayHistoryDataPart) {
   };
 }
 
-function payloadString(event: GatewayEvent, key: string): string {
-  const value = event.payload?.[key];
-  return typeof value === "string" ? value : "";
-}
-
-function crmToolStatusLabel(endpoint: string): string {
-  if (endpoint === LEAD_LIST_ENDPOINT) return "Fetching latest leads…";
-  if (endpoint === PROPERTY_LIST_ENDPOINT) return "Fetching properties…";
-  return "Fetching CRM data…";
-}
-
-function crmToolErrorLabel(message: string): string {
-  if (/403|blocked|security service/i.test(message)) {
-    return "CRM access was blocked. Check the CRM security or API access settings.";
-  }
-  if (/401|unauthori[sz]ed|authentication/i.test(message)) {
-    return "CRM authentication failed. Check the configured CRM credentials.";
-  }
-  return "CRM request failed. Please try again.";
-}
+class GatewayTurnTimeoutError extends Error {}
+class GatewayTurnAbortedError extends Error {}
 
 async function withTurnTimeout(turn: Promise<void>): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -130,7 +105,10 @@ async function withTurnTimeout(turn: Promise<void>): Promise<void> {
     await Promise.race([
       turn,
       new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error("gateway turn timed out")), TURN_TIMEOUT_MS);
+        timer = setTimeout(
+          () => reject(new GatewayTurnTimeoutError("gateway turn timed out")),
+          TURN_TIMEOUT_MS,
+        );
       }),
     ]);
   } finally {
@@ -169,7 +147,10 @@ export async function GET(request: Request) {
       messages: history.messages
         .filter((message) => message.role === "user" || message.role === "assistant")
         .map((message, index): CrmChatMessage => {
-          const dataParts = (message.data_parts ?? [])
+          const dataParts = selectRelevantDataParts(
+            message.data_parts,
+            message.content,
+          )
             .map((part) => leadListPart(part) ?? propertyListPart(part))
             .filter((part): part is NonNullable<typeof part> => Boolean(part));
           return {
@@ -225,16 +206,17 @@ export async function POST(request: Request) {
         process.env.GATEWAY_WEB_TOKEN,
       );
       const partId = `response-${requestId}`;
+      const workingPartId = `working-${requestId}`;
       let textStarted = false;
       let textEnded = false;
       let acceptedTurnId = "";
       let submissionResolved = false;
-      let replayPersistedResponse = false;
       let completeTurn: (() => void) | undefined;
       let failTurn: ((error: Error) => void) | undefined;
       let stopRequest: Promise<unknown> | undefined;
       let hasContent = false;
       const pendingEvents: GatewayEvent[] = [];
+      const attachmentNames = new Set<string>();
       const turnComplete = new Promise<void>((resolve, reject) => {
         completeTurn = resolve;
         failTurn = reject;
@@ -251,113 +233,17 @@ export async function POST(request: Request) {
         writer.write({ type: "text-end", id: partId });
       };
 
+      writer.write(workingStatusPart(workingPartId));
+
       const handleGatewayEvent = (event: GatewayEvent) => {
         if (event.session_id !== gatewaySessionId) return;
         if (acceptedTurnId && event.turn_id && event.turn_id !== acceptedTurnId) return;
 
-        if (event.type === "tool.start" && !replayPersistedResponse) {
-          const runId = payloadString(event, "run_id");
-          const toolName = payloadString(event, "tool_name");
-          if (!runId || toolName !== CRM_TOOL_NAME) return;
-          writer.write({
-            type: "data-tool-status",
-            id: runId,
-            data: {
-              status: "running",
-              label: crmToolStatusLabel(payloadString(event, "endpoint")),
-            } satisfies CrmToolStatusView,
-          });
-        } else if (event.type === "message.delta" && !replayPersistedResponse) {
-          const delta = payloadString(event, "delta");
-          if (!delta) return;
-          startText();
-          hasContent = true;
-          writer.write({ type: "text-delta", id: partId, delta });
-        } else if (
-          event.type === "lead.list.available" &&
-          !replayPersistedResponse
-        ) {
-          const data = event.payload?.data;
-          const id = payloadString(event, "id");
-          const runId = payloadString(event, "run_id");
-          if (!id || !isRecord(data)) return;
-          if (runId) {
-            writer.write({
-              type: "data-tool-status",
-              id: runId,
-              data: {
-                status: "complete",
-                label: "",
-              } satisfies CrmToolStatusView,
-            });
-          }
-          hasContent = true;
-          writer.write({
-            type: "data-lead-list",
-            id,
-            data: data as unknown as LeadListView,
-          });
-        } else if (
-          event.type === "property.list.available" &&
-          !replayPersistedResponse
-        ) {
-          const data = event.payload?.data;
-          const id = payloadString(event, "id");
-          const runId = payloadString(event, "run_id");
-          if (!id || !isRecord(data)) return;
-          if (runId) {
-            writer.write({
-              type: "data-tool-status",
-              id: runId,
-              data: {
-                status: "complete",
-                label: "",
-              } satisfies CrmToolStatusView,
-            });
-          }
-          hasContent = true;
-          writer.write({
-            type: "data-property-list",
-            id,
-            data: data as unknown as PropertyListView,
-          });
-        } else if (event.type === "tool.complete" && !replayPersistedResponse) {
-          const runId = payloadString(event, "run_id");
-          const toolName = payloadString(event, "tool_name");
-          if (!runId || toolName !== CRM_TOOL_NAME) return;
-          writer.write({
-            type: "data-tool-status",
-            id: runId,
-            data: {
-              status: "complete",
-              label: "",
-            } satisfies CrmToolStatusView,
-          });
-        } else if (event.type === "tool.error" && !replayPersistedResponse) {
-          const runId = payloadString(event, "run_id");
-          const toolName = payloadString(event, "tool_name");
-          if (!runId || toolName !== CRM_TOOL_NAME) return;
-          hasContent = true;
-          writer.write({
-            type: "data-tool-status",
-            id: runId,
-            data: {
-              status: "error",
-              label: crmToolErrorLabel(payloadString(event, "message")),
-            } satisfies CrmToolStatusView,
-          });
-        } else if (
-          event.type === "attachment.available" &&
-          !replayPersistedResponse
-        ) {
-          const fileName = payloadString(event, "file_name") || "document";
-          startText();
-          hasContent = true;
-          writer.write({
-            type: "text-delta",
-            id: partId,
-            delta: `\n\nFile ready: ${fileName}`,
-          });
+        const temporaryStatus = temporaryStatusPartForEvent(event, workingPartId);
+        if (temporaryStatus) writer.write(temporaryStatus);
+
+        if (event.type === "attachment.available") {
+          attachmentNames.add(payloadString(event, "file_name") || "document");
         } else if (event.type === "turn.error") {
           failTurn?.(new Error(payloadString(event, "message") || "gateway turn failed"));
         } else if (event.type === "turn.complete") {
@@ -377,7 +263,9 @@ export async function POST(request: Request) {
         stopRequest = gateway
           .request("prompt.stop", { session_id: gatewaySessionId })
           .catch(() => undefined);
-        failTurn?.(new DOMException("Aborted", "AbortError"));
+        if (submissionResolved) {
+          failTurn?.(new GatewayTurnAbortedError("gateway turn aborted"));
+        }
       };
       request.signal.addEventListener("abort", onAbort, { once: true });
 
@@ -415,56 +303,66 @@ export async function POST(request: Request) {
               request.signal,
             );
         acceptedTurnId = accepted.turn_id;
-        replayPersistedResponse = !action && accepted.duplicate === true;
         submissionResolved = true;
         for (const event of pendingEvents) handleGatewayEvent(event);
         pendingEvents.length = 0;
 
-        if (replayPersistedResponse) {
-          if (accepted.status === "error") {
-            throw new Error("the original gateway turn failed");
-          }
-          if (accepted.status !== "complete") {
-            await withTurnTimeout(turnComplete);
-          }
-
-          const history = await gateway.request<{
-            messages: GatewayHistoryMessage[];
-          }>(
-            "session.history",
-            { session_id: gatewaySessionId },
-            request.signal,
-          );
-          const persisted = history.messages.findLast(
-            (message) =>
-              message.role === "assistant" &&
-              message.platform_message_id === `assistant:${acceptedTurnId}`,
-          );
-          if (!persisted) {
-            throw new Error("the completed gateway response was not persisted");
-          }
-
-          if (persisted.content) {
-            startText();
-            hasContent = true;
-            writer.write({
-              type: "text-delta",
-              id: partId,
-              delta: persisted.content,
-            });
-          }
-          for (const dataPart of persisted.data_parts ?? []) {
-            const part = leadListPart(dataPart) ?? propertyListPart(dataPart);
-            if (!part) continue;
-            hasContent = true;
-            writer.write(part);
-          }
-        } else {
+        if (accepted.status === "error") {
+          throw new Error("the original gateway turn failed");
+        }
+        if (accepted.status !== "complete") {
           await withTurnTimeout(turnComplete);
+        }
+
+        const history = await gateway.request<{
+          messages: GatewayHistoryMessage[];
+        }>(
+          "session.history",
+          { session_id: gatewaySessionId },
+          request.signal,
+        );
+        const persisted = persistedAssistantMessageForTurn(
+          history.messages,
+          acceptedTurnId,
+        );
+        if (!persisted) {
+          throw new Error("the completed gateway response was not persisted");
+        }
+
+        writer.write(completedWorkingStatusPart(workingPartId));
+        const attachmentText = [...attachmentNames]
+          .map((fileName) => `File ready: ${fileName}`)
+          .join("\n\n");
+        const finalText = [persisted.content, attachmentText]
+          .filter(Boolean)
+          .join("\n\n");
+        if (finalText) {
+          startText();
+          hasContent = true;
+          writer.write({ type: "text-delta", id: partId, delta: finalText });
+        }
+        for (const dataPart of selectRelevantDataParts(
+          persisted.data_parts,
+          persisted.content,
+        )) {
+          const part = leadListPart(dataPart) ?? propertyListPart(dataPart);
+          if (!part) continue;
+          hasContent = true;
+          writer.write(part);
         }
 
         if (!hasContent) throw new Error("The agent returned an empty response.");
         endText();
+      } catch (error) {
+        if (request.signal.aborted || error instanceof GatewayTurnAbortedError) {
+          return;
+        }
+        if (error instanceof GatewayTurnTimeoutError) {
+          stopRequest = gateway
+            .request("prompt.stop", { session_id: gatewaySessionId })
+            .catch(() => undefined);
+        }
+        throw error;
       } finally {
         await stopRequest;
         request.signal.removeEventListener("abort", onAbort);

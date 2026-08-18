@@ -1,14 +1,17 @@
 import {
   createDeepAgent,
+  GENERAL_PURPOSE_SUBAGENT,
   registerHarnessProfile,
   type CompiledSubAgent,
   type DeepAgent,
+  type SubAgent,
 } from "deepagents";
 import { createAgent } from "langchain";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
 import { createModel } from "./providers/factory.js";
 import { callCrmApiTool } from "./tools/crm.js";
 import { generatePropertyPdfTool } from "./tools/property-pdf.js";
+import { providerMessageCompatibilityMiddleware } from "./providers/message-compatibility.js";
 
 export type AgentSurface = "cli" | "gateway";
 
@@ -27,6 +30,7 @@ function createBrokerReminderSubagent(model: BaseLanguageModel): CompiledSubAgen
     runnable: createAgent({
       model,
       tools: [callCrmApiTool],
+      middleware: [providerMessageCompatibilityMiddleware],
       systemPrompt:
         "You are a broker reminder specialist for a real estate CRM. " +
         "Your job is to inspect CRM records, identify which broker follow-ups look overdue or important, and draft concise reminder messages. " +
@@ -39,6 +43,15 @@ function createBrokerReminderSubagent(model: BaseLanguageModel): CompiledSubAgen
   };
 }
 
+function createGeneralPurposeSubagent(model: BaseLanguageModel): SubAgent {
+  return {
+    ...GENERAL_PURPOSE_SUBAGENT,
+    model,
+    tools: [callCrmApiTool, generatePropertyPdfTool],
+    middleware: [providerMessageCompatibilityMiddleware],
+  };
+}
+
 export function createCrmAgent(surface: AgentSurface = "cli"): DeepAgent {
   const model = createModel();
   const mobileGuidance =
@@ -47,7 +60,11 @@ export function createCrmAgent(surface: AgentSurface = "cli"): DeepAgent {
   return createDeepAgent({
     model,
     tools: [callCrmApiTool, generatePropertyPdfTool],
-    subagents: [createBrokerReminderSubagent(model)],
+    middleware: [providerMessageCompatibilityMiddleware],
+    subagents: [
+      createGeneralPurposeSubagent(model),
+      createBrokerReminderSubagent(model),
+    ],
     systemPrompt:
       `You are a helpful CRM assistant${surface === "gateway" ? " reachable via Telegram and WhatsApp" : ""}. ` +
       "You have access to the Proppy CRM API. " +
@@ -59,7 +76,7 @@ export function createCrmAgent(surface: AgentSurface = "cli"): DeepAgent {
       "Before saying that a specific property or reference exists, verify that its exact value is present in the latest tool result. A user message or an earlier assistant response is not proof that it exists. " +
       "When searching for an exact reference, pass it unchanged in the Reference filter. If the returned PropertyList is empty, clearly say that the reference was not found in the connected CRM. " +
       "When listing CRM resources, pass the user's criteria in the tool's filters field. For a broad, unfiltered request, return a single page of at most 20 records and say that it is a preview. " +
-      "Keep autoPaginate enabled only when filters substantially narrow the result or the user explicitly asks for all records, a complete export, or a total count. " +
+      "For ordinary property searches, use the tool's default compact 20-record preview and its totalRecords metadata; do not delegate the result or enable autoPaginate. For a city name such as Lisbon use FreeText, and for an exact bedroom count set both MinBedrooms and MaxBedrooms. Enable property autoPaginate only when the user explicitly asks for every record or a complete export. A total count is already available without fetching every page. " +
       "For /api/Leads/List, the tool already returns a compact summary of the newest 20 leads by CreateDate unless you set resultLimit or another result sort. Keep resultDetail=summary for ordinary lead lists and use full only when the user explicitly needs complete nested details. Use _result metadata for the full matching count and truncation status; do not delegate simple lead sorting or inspect an offloaded result file. " +
       "When the user asks to generate, export, prepare, create, or send a property PDF, use generate_property_pdf. " +
       "After generate_property_pdf succeeds, include the returned MEDIA:/absolute/path tag exactly once in the final response so the gateway can deliver the PDF document, but never show or mention the local file path to the user. " +

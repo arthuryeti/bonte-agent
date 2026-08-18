@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { shapeLeadListResult } from "../src/tools/crm.js";
+import {
+  callCrmApiTool,
+  resolveAutoPagination,
+  shapeLeadListResult,
+  shapePropertyListResult,
+} from "../src/tools/crm.js";
 import {
   extractCrmToolError,
   normalizeLeadListToolOutput,
@@ -164,6 +169,123 @@ describe("CRM lead result shaping", () => {
   it("leaves non-lead-shaped responses unchanged", () => {
     const response = { Errors: [{ Message: "Unavailable" }] };
     assert.equal(shapeLeadListResult(response), response);
+  });
+});
+
+describe("CRM property result shaping", () => {
+  it("defaults property searches to manual pagination", () => {
+    assert.equal(
+      resolveAutoPagination("/api/Property/ListProperties", undefined),
+      false
+    );
+    assert.equal(
+      resolveAutoPagination("/api/Property/ListProperties", true),
+      true
+    );
+    assert.equal(resolveAutoPagination("/api/Agency/GetAgencies", undefined), true);
+  });
+
+  it("returns compact property previews with the full matching count", () => {
+    const properties = Array.from({ length: 25 }, (_, index) => ({
+      propertyId: index + 1,
+      reference: `LX-${index + 1}`,
+      bedrooms: 2,
+      price: 400_000 + index,
+      locale: [{
+        language: "en",
+        title: `Lisbon apartment ${index + 1}`,
+        description: "x".repeat(2_000),
+      }],
+      location: { cityName: "Lisbon", address: `Street ${index + 1}` },
+      photos: Array.from({ length: 10 }, (_, photoIndex) => ({
+        Url: `https://images.example.com/${index + 1}-${photoIndex}.jpg`,
+        SortOrder: photoIndex,
+      })),
+      files: [{ Url: "https://example.com/large-brochure.pdf" }],
+    }));
+
+    const result = shapePropertyListResult(
+      { PropertyList: properties, Count: 184 },
+      { resultLimit: 20 }
+    ) as {
+      PropertyList: Array<Record<string, unknown>>;
+      _pagination: Record<string, unknown>;
+    };
+
+    assert.equal(result.PropertyList.length, 20);
+    assert.equal(result.PropertyList[0]?.files, undefined);
+    assert.deepEqual(result.PropertyList[0]?.photos, [{
+      Url: "https://images.example.com/1-0.jpg",
+      SortOrder: 0,
+    }]);
+    assert.equal(
+      ((result.PropertyList[0]?.locale as Array<Record<string, unknown>>)[0]
+        ?.description as string).length,
+      600
+    );
+    assert.deepEqual(result._pagination, {
+      autoPaginated: false,
+      returnedRecords: 20,
+      totalRecords: 184,
+      detail: "summary",
+      truncated: true,
+    });
+  });
+
+  it("requests one bounded page for a Lisbon two-bedroom search", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalBaseUrl = process.env.CRM_BASE_URL;
+    let requestBody: Record<string, unknown> | undefined;
+    let requestCount = 0;
+    process.env.CRM_BASE_URL = "https://crm.example.test";
+    globalThis.fetch = async (_input, init) => {
+      requestCount += 1;
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        PropertyList: [{
+          propertyId: 42,
+          reference: "LX-42",
+          bedrooms: 2,
+          files: [{ Url: "https://example.test/large.pdf" }],
+        }],
+        Count: 184,
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    };
+
+    try {
+      const output = await callCrmApiTool.invoke({
+        endpoint: "/api/Property/ListProperties",
+        method: "POST",
+        filters: {
+          FreeText: "Lisbon",
+          MinBedrooms: 2,
+          MaxBedrooms: 2,
+        },
+      });
+      const parsed = JSON.parse(String(output)) as {
+        PropertyList: Array<Record<string, unknown>>;
+        _pagination: Record<string, unknown>;
+      };
+
+      assert.equal(requestCount, 1);
+      assert.deepEqual(requestBody, {
+        SequenceNmbr: 1,
+        MaxResponses: 20,
+        FreeText: "Lisbon",
+        MinBedrooms: 2,
+        MaxBedrooms: 2,
+      });
+      assert.equal(parsed.PropertyList[0]?.files, undefined);
+      assert.equal(parsed._pagination.totalRecords, 184);
+      assert.equal(parsed._pagination.truncated, true);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalBaseUrl === undefined) delete process.env.CRM_BASE_URL;
+      else process.env.CRM_BASE_URL = originalBaseUrl;
+    }
   });
 });
 

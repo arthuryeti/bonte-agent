@@ -48,4 +48,17 @@ describe("compact lead message text", () => {
     assert.equal(compactLeadMessageText(summary, leadList), summary);
     assert.equal(compactLeadMessageText(analysis, leadList), analysis);
   });
+
+  it("keeps a numbered follow-up audit unchanged", () => {
+    const analysis = [
+      "**Overdue broker follow-ups**",
+      "1. Ana Belchior — a requested viewing was not confirmed.",
+      "2. Ricardo Rios — the client leaves tomorrow.",
+      "3. Sandra Garrett — requested documents remain unanswered.",
+      "Total: 3 overdue follow-ups across 3 brokers.",
+    ].join("\n");
+
+    assert.equal(isVerboseLeadListing(analysis), true);
+    assert.equal(compactLeadMessageText(analysis, leadList), analysis);
+  });
 });

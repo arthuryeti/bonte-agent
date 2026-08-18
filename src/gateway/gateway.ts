@@ -53,6 +53,7 @@ class AgentTraceCallback extends BaseCallbackHandler {
   private documentToolOutputs: unknown[] = [];
   private leadListOutputs: LeadListView[] = [];
   private propertyListOutputs: PropertyListView[] = [];
+  private toolExecutionStarted = false;
 
   constructor(
     private readonly webAdapter?: WebAdapter,
@@ -70,6 +71,7 @@ class AgentTraceCallback extends BaseCallbackHandler {
     _metadata?: Record<string, unknown>,
     runName?: string
   ): void {
+    this.toolExecutionStarted = true;
     const toolName = this.toolName(tool, runName);
     this.toolRuns.set(runId, toolName);
     if (this.webAdapter && this.chatId) {
@@ -162,6 +164,10 @@ class AgentTraceCallback extends BaseCallbackHandler {
 
   getPropertyListOutputs(): readonly PropertyListView[] {
     return this.propertyListOutputs;
+  }
+
+  hasStartedToolExecution(): boolean {
+    return this.toolExecutionStarted;
   }
 
   handleToolError(err: unknown, runId: string): void {
@@ -676,6 +682,7 @@ export class Gateway {
     let lastUpdateLength = 0;
     const messageBuffers = new Map<string, string>();
     const deliveryLedger = new TurnDeliveryLedger();
+    let streamProducedOutput = false;
 
     try {
       const stream = await (
@@ -695,6 +702,7 @@ export class Gateway {
       );
 
       for await (const chunk of stream) {
+        streamProducedOutput = true;
         const parsed = this.parseStreamChunk(chunk);
         if (!parsed) continue;
 
@@ -746,6 +754,12 @@ export class Gateway {
       }
     } catch (err) {
       if (signal.aborted) throw err;
+      if (
+        streamProducedOutput ||
+        callbacks.some((callback) => callback.hasStartedToolExecution())
+      ) {
+        throw err;
+      }
       this.liveAgentStreamingDisabled = true;
       console.warn(
         "[Gateway] live agent streaming failed; falling back to invoke() for this and future requests:",

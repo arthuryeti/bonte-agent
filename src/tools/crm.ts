@@ -6,7 +6,9 @@ import {
 } from "../client/crm-client.js";
 
 const LEADS_LIST_ENDPOINT = "/api/Leads/List";
+const PROPERTY_LIST_ENDPOINT = "/api/Property/ListProperties";
 const DEFAULT_LEAD_RESULT_LIMIT = 20;
+const DEFAULT_PROPERTY_RESULT_LIMIT = 20;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -66,13 +68,18 @@ function mergeFiltersIntoBody(
 
 type LeadSortField = "CreateDate" | "LastUpdate";
 type SortDirection = "asc" | "desc";
-type LeadResultDetail = "summary" | "full";
+type ListResultDetail = "summary" | "full";
 
 interface LeadResultOptions {
   resultLimit?: number;
   resultSortBy?: LeadSortField;
   resultSortDirection?: SortDirection;
-  resultDetail?: LeadResultDetail;
+  resultDetail?: ListResultDetail;
+}
+
+interface PropertyResultOptions {
+  resultLimit?: number;
+  resultDetail?: ListResultDetail;
 }
 
 function copyFields(
@@ -245,6 +252,135 @@ export function shapeLeadListResult(
   };
 }
 
+function summarizeProperty(property: Record<string, unknown>): Record<string, unknown> {
+  const summary = copyFields(property, [
+    "id",
+    "propertyId",
+    "internalId",
+    "reference",
+    "status",
+    "businessType",
+    "businessTypeLocale",
+    "type",
+    "typeLocale",
+    "condition_type",
+    "conditionTypeLocale",
+    "typology",
+    "bedrooms",
+    "bathrooms",
+    "price",
+    "second_price",
+    "currency",
+    "priceprefixhelper",
+    "price_visible",
+    "sold",
+    "visibleOnWebsite",
+    "living_area",
+    "total_area",
+    "plot_area",
+    "energy_rating",
+    "createDate",
+    "lastChangeDate",
+  ]);
+
+  const locales = Array.isArray(property.locale)
+    ? property.locale.filter(isRecord)
+    : [];
+  const locale =
+    locales.find((item) => /^(?:en|eng)$/i.test(String(item.language ?? ""))) ??
+    locales[0];
+  if (locale) {
+    const selectedLocale = copyFields(locale, ["language", "title", "short"]);
+    if (!selectedLocale.short && typeof locale.description === "string") {
+      selectedLocale.description = locale.description.slice(0, 600);
+    }
+    summary.locale = [selectedLocale];
+  }
+
+  if (isRecord(property.location)) {
+    summary.location = copyFields(property.location, [
+      "Country",
+      "Region",
+      "City",
+      "Locality",
+      "countryCode",
+      "locationId",
+      "zone",
+      "address",
+      "zipcode",
+      "regionName",
+      "cityName",
+      "localityName",
+    ]);
+  }
+
+  const agents = summarizeRecords(
+    property.listing_agent,
+    ["id", "Name", "Email", "Phone", "Cellphone", "Active", "IsPrimaryAgent"],
+    1
+  );
+  if (agents.length > 0) summary.listing_agent = agents;
+
+  const photos = summarizeRecords(
+    property.photos,
+    ["Url", "URL", "url", "SortOrder"],
+    1
+  );
+  if (photos.length > 0) summary.photos = photos;
+
+  if (Array.isArray(property.features_list)) {
+    summary.features_list = property.features_list.slice(0, 12);
+  } else if (Array.isArray(property.features_list_enum)) {
+    summary.features_list_enum = property.features_list_enum.slice(0, 12);
+  }
+
+  return summary;
+}
+
+/** Bounds and compacts property searches before their results enter model context. */
+export function shapePropertyListResult(
+  data: unknown,
+  options: PropertyResultOptions = {}
+): unknown {
+  if (!isRecord(data) || !Array.isArray(data.PropertyList)) return data;
+
+  const detail = options.resultDetail ?? "summary";
+  const properties = data.PropertyList.filter(isRecord);
+  const limit = options.resultLimit ?? properties.length;
+  const selected = properties
+    .slice(0, limit)
+    .map((property) => (detail === "full" ? property : summarizeProperty(property)));
+  const existingPagination = isRecord(data._pagination) ? data._pagination : {};
+  const configuredTotal = existingPagination.totalRecords ?? data.Count;
+  const totalRecords =
+    typeof configuredTotal === "number" && Number.isFinite(configuredTotal)
+      ? configuredTotal
+      : properties.length;
+
+  return {
+    ...data,
+    PropertyList: selected,
+    _pagination: {
+      ...existingPagination,
+      autoPaginated: existingPagination.autoPaginated === true,
+      returnedRecords: selected.length,
+      totalRecords,
+      detail,
+      truncated:
+        existingPagination.truncated === true ||
+        selected.length < properties.length ||
+        selected.length < totalRecords,
+    },
+  };
+}
+
+export function resolveAutoPagination(
+  endpoint: string,
+  requested: boolean | undefined
+): boolean {
+  return requested ?? endpoint !== PROPERTY_LIST_ENDPOINT;
+}
+
 /**
  * Single tool that exposes the entire Proppy CRM API to the agent.
  *
@@ -280,7 +416,18 @@ export const callCrmApiTool = tool(
     resultSortDirection,
     resultDetail,
   }) => {
-    const requestBody = mergeFiltersIntoBody(endpoint, body, filters);
+    const shouldAutoPaginate = resolveAutoPagination(endpoint, autoPaginate);
+    let requestBody = mergeFiltersIntoBody(endpoint, body, filters);
+    if (endpoint === PROPERTY_LIST_ENDPOINT && !shouldAutoPaginate) {
+      requestBody = {
+        SequenceNmbr: 1,
+        MaxResponses: Math.min(
+          pageSize ?? resultLimit ?? DEFAULT_PROPERTY_RESULT_LIMIT,
+          100
+        ),
+        ...(requestBody ?? {}),
+      };
+    }
     const request = {
       endpoint,
       method: method as "GET" | "POST",
@@ -290,7 +437,7 @@ export const callCrmApiTool = tool(
 
     try {
       const response =
-        autoPaginate ?? true
+        shouldAutoPaginate
           ? await callCrmApiWithPagination(request, { pageSize, maxPages })
           : await callCrmApi(request);
 
@@ -302,7 +449,14 @@ export const callCrmApiTool = tool(
               resultSortDirection,
               resultDetail,
             })
-          : response.data;
+          : endpoint === PROPERTY_LIST_ENDPOINT
+            ? shapePropertyListResult(response.data, {
+                resultLimit: shouldAutoPaginate
+                  ? resultLimit
+                  : resultLimit ?? DEFAULT_PROPERTY_RESULT_LIMIT,
+                resultDetail,
+              })
+            : response.data;
 
       return JSON.stringify(responseData);
     } catch (error) {
@@ -340,8 +494,8 @@ export const callCrmApiTool = tool(
       "- POST /api/Property/Hit – record a property visit/hit\n" +
       "For POST requests, provide the exact request body as a JSON object in 'body'. " +
       "Use 'filters' for end-user search criteria; it is merged into the correct filter object for agencies and agents, and into the top-level body for leads, properties, and other endpoints. " +
-      "Supported paginated list endpoints are automatically fetched across all pages by default: /api/Agency/GetAgencies, /api/Entity/GetAgents, /api/Entity/GetOwnerlinks, and /api/Property/ListProperties. " +
-      "For properties, filters include Reference, PropertyIds, BusinessTypeIds, PropertyTypeIds, Locations, PriceFrom, PriceTo, MinBedrooms, MaxBedrooms, Active, VisibleOnWebsite, Sold, AgentId, AgencyId, FreeText, and related FilterRq fields. " +
+      "Agency and entity list endpoints are automatically fetched across all pages by default. Property searches default to one compact page of 20 records while preserving Count as totalRecords; set autoPaginate=true only for an explicitly requested complete result. " +
+      "For properties, filters include Reference, PropertyIds, BusinessTypeIds, PropertyTypeIds, Locations, PriceFrom, PriceTo, MinBedrooms, MaxBedrooms, Active, VisibleOnWebsite, Sold, AgentId, AgencyId, FreeText, and related FilterRq fields. For a named city such as Lisbon, use FreeText. For exactly two bedrooms, set both MinBedrooms and MaxBedrooms to 2. " +
       "For leads, filters include StartDate, EndDate, Category, OriginId, and Language; the API spec does not expose pagination for /api/Leads/List. " +
       "Lead-list results are sorted by CreateDate descending, limited to 20 records, and compacted to useful summary fields by default because the API returns its entire history with large nested event data. Use resultLimit (maximum 100) to request a different bounded count, resultSortBy to sort by CreateDate or LastUpdate, resultSortDirection for newest/oldest ordering, and resultDetail=full only when the user explicitly needs complete nested lead details. The _result metadata reports the full matching count and whether records were truncated. " +
       "For GET requests, provide query parameters in 'queryParams'.",
@@ -372,7 +526,7 @@ export const callCrmApiTool = tool(
         .boolean()
         .optional()
         .describe(
-          "Defaults to true. When true, fetch every page for supported list endpoints and return a merged result with _pagination metadata."
+          "Fetch every page for supported list endpoints. Defaults to false for property searches and true for other paginated lists. Enable for properties only when the user explicitly requests every matching record."
         ),
       pageSize: z
         .number()
@@ -397,7 +551,7 @@ export const callCrmApiTool = tool(
         .max(100)
         .optional()
         .describe(
-          "Maximum lead records returned to the model for /api/Leads/List. Defaults to 20."
+          "Maximum lead or property records returned to the model. Ordinary lead and property searches default to 20."
         ),
       resultSortBy: z
         .enum(["CreateDate", "LastUpdate"])
@@ -415,7 +569,7 @@ export const callCrmApiTool = tool(
         .enum(["summary", "full"])
         .optional()
         .describe(
-          "Lead-list detail level. Defaults to summary; use full only when complete nested lead/event details are necessary."
+          "Lead/property list detail level. Defaults to summary; use full only when complete nested records are necessary."
         ),
     }),
   }

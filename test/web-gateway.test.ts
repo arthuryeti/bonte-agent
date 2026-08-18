@@ -315,6 +315,118 @@ describe("web JSON-RPC gateway", () => {
     client.socket.close();
   });
 
+  it("does not replay an agent turn after streaming has produced output", async () => {
+    let invocations = 0;
+    const fakeAgent = {
+      async stream() {
+        return (async function* () {
+          yield ["messages", [{ type: "ai", id: "started", content: "Working…" }]];
+          throw new Error("provider rejected a later model step");
+        })();
+      },
+      async invoke() {
+        invocations += 1;
+        return { messages: [{ role: "assistant", content: "replayed" }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "no-stream-replay" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "no-stream-replay",
+      text: "Run this once",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    assert.equal(invocations, 0);
+    assert.equal(
+      client.events
+        .filter((event) => event.type === "message.delta")
+        .some((event) => (event.payload as { delta?: string }).delta === "replayed"),
+      false
+    );
+    client.socket.close();
+  });
+
+  it("does not replay when a tool starts before the first stream chunk", async () => {
+    let invocations = 0;
+    const fakeAgent = {
+      async stream(
+        _input: unknown,
+        options: {
+          callbacks?: Array<{
+            handleToolStart(tool: unknown, input: string, runId: string): void;
+          }>;
+        }
+      ) {
+        options.callbacks?.[0]?.handleToolStart(
+          { name: "call_crm_api" },
+          JSON.stringify({ endpoint: "/api/Property/ListProperties" }),
+          "started-before-chunk"
+        );
+        throw new Error("provider failed after the tool started");
+      },
+      async invoke() {
+        invocations += 1;
+        return { messages: [{ role: "assistant", content: "replayed" }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "no-tool-replay" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "no-tool-replay",
+      text: "Run the CRM request once",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    assert.equal(invocations, 0);
+    client.socket.close();
+  });
+
+  it("falls back to invoke when streaming fails before producing output", async () => {
+    let invocations = 0;
+    const fakeAgent = {
+      async stream() {
+        throw new Error("streaming is unavailable");
+      },
+      async invoke() {
+        invocations += 1;
+        return { messages: [{ role: "assistant", content: "Fallback response." }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+
+    await client.request("session.create", { session_id: "safe-stream-fallback" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
+      session_id: "safe-stream-fallback",
+      text: "Use the safe fallback",
+    });
+    await waitForEvent(
+      client.events,
+      (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
+    );
+
+    assert.equal(invocations, 1);
+    assert.ok(
+      client.events
+        .filter((event) => event.type === "message.delta")
+        .some((event) =>
+          (event.payload as { delta?: string }).delta?.includes("Fallback response.")
+        )
+    );
+    client.socket.close();
+  });
+
   it("treats a repeated browser request ID as the same persisted turn", async () => {
     let invocations = 0;
     const fakeAgent = {

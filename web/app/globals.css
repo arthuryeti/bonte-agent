@@ -1133,6 +1133,15 @@ button {
   animation: drawer-in 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+.property-drawer {
+  width: min(400px, 100%);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.property-drawer .drawer-person > div {
+  min-width: 0;
+}
+
 .drawer-header {
   min-height: 104px;
   padding: 20px;

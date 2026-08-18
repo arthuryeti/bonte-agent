@@ -457,12 +457,18 @@ The CRM tool accepts both an exact `body` payload and a higher-level `filters` o
 - `/api/Agency/GetAgencies`: filters are merged under `AgencySearchFilters`.
 - `/api/Entity/GetAgents`: filters are merged under `EntitySearchFilters`.
 
-Supported paginated list endpoints are auto-paginated by default and return one merged response with `_pagination` metadata:
+Agency and entity list endpoints are auto-paginated by default and return one merged response with `_pagination` metadata:
 
 - `/api/Agency/GetAgencies` via `PagingRq.Current` / `PagingRq.ResultsPerPage`
 - `/api/Entity/GetAgents` via `PagingRq.Current` / `PagingRq.ResultsPerPage`
 - `/api/Entity/GetOwnerlinks` via `PagingRq.Current` / `PagingRq.ResultsPerPage`
-- `/api/Property/ListProperties` via `SequenceNmbr` / `MaxResponses`
+
+Property searches use `SequenceNmbr` / `MaxResponses` but default to a compact
+20-record first-page preview. The response keeps the CRM `Count` as
+`_pagination.totalRecords`, so counts do not require downloading every property.
+Set `autoPaginate: true` only when the user explicitly requests every matching
+property or a complete export. Named cities can be searched with `FreeText`; an
+exact bedroom count should set both `MinBedrooms` and `MaxBedrooms`.
 
 `/api/Leads/List` supports filters, but the API spec does not expose pagination
 fields for that endpoint. Because an unfiltered response contains the complete
