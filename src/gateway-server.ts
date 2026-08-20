@@ -5,6 +5,7 @@ import { WebAdapter } from "./gateway/platforms/web.js";
 import { GatewayWebSocketServer } from "./gateway/websocket-server.js";
 import type { GatewayConfig } from "./gateway/types.js";
 import { describeResolvedProvider } from "./providers/factory.js";
+import { logAiEvent } from "./observability.js";
 
 /**
  * Gateway server entry point.
@@ -110,6 +111,10 @@ async function main() {
 
   const agent = createCrmAgent("gateway");
   console.log(`[LLM] ${describeResolvedProvider()}`);
+  logAiEvent("info", "gateway.starting", {
+    provider: process.env.LLM_PROVIDER || "unknown",
+    model: process.env.LLM_MODEL || "unknown",
+  });
 
   const gateway = new Gateway(agent, config);
   await gateway.start();

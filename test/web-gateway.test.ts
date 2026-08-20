@@ -227,6 +227,9 @@ describe("web JSON-RPC gateway", () => {
 
     assert.match(agentMessage, /interactive lead card/);
     assert.match(agentMessage, /interactive property card/);
+    assert.match(agentMessage, /decision-useful summary/);
+    assert.match(agentMessage, /sale\/rent and property-type mix/);
+    assert.match(agentMessage, /property cards render below/i);
     assert.match(agentMessage, /Show my latest leads/);
     const history = await client.request<{
       messages: Array<{ role: string; content: string }>;
@@ -349,6 +352,14 @@ describe("web JSON-RPC gateway", () => {
         .some((event) => (event.payload as { delta?: string }).delta === "replayed"),
       false
     );
+    const history = await client.request<{
+      messages: Array<{ role: string; content: string; platform_message_id?: string }>;
+    }>("session.history", { session_id: "no-stream-replay" });
+    assert.match(history.messages.at(-1)?.content ?? "", /AI service returned an error/);
+    assert.equal(
+      history.messages.at(-1)?.platform_message_id,
+      `assistant:${accepted.turn_id}`,
+    );
     client.socket.close();
   });
 
@@ -389,6 +400,10 @@ describe("web JSON-RPC gateway", () => {
     );
 
     assert.equal(invocations, 0);
+    const history = await client.request<{
+      messages: Array<{ role: string; content: string }>;
+    }>("session.history", { session_id: "no-tool-replay" });
+    assert.match(history.messages.at(-1)?.content ?? "", /AI service returned an error/);
     client.socket.close();
   });
 

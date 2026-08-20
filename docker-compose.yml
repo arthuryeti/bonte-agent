@@ -8,6 +8,7 @@ services:
     stop_grace_period: 30s
     environment:
       NODE_ENV: production
+      APP_RELEASE: "${SOURCE_COMMIT:-unknown}"
 
       DATABASE_URL: "${DATABASE_URL:?Set DATABASE_URL to the Coolify PostgreSQL internal URL}"
       DATABASE_SSL: "${DATABASE_SSL:-false}"
@@ -111,6 +112,7 @@ services:
         condition: service_healthy
     environment:
       NODE_ENV: production
+      APP_RELEASE: "${SOURCE_COMMIT:-unknown}"
       HOSTNAME: 0.0.0.0
       PORT: "3000"
 

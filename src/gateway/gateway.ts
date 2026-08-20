@@ -34,6 +34,12 @@ import {
   type PropertyListView,
 } from "./crm-ui.js";
 import { TurnDeliveryLedger } from "./turn-delivery-ledger.js";
+import {
+  classifyAiFailure,
+  logAiEvent,
+  serializeError,
+  type AiFailureCategory,
+} from "../observability.js";
 import type {
   GatewayConfig,
   MessageEvent,
@@ -45,6 +51,21 @@ import type {
 interface LiveAgentResult {
   result: unknown;
   deliveryLedger?: TurnDeliveryLedger;
+}
+
+export interface AiRuntimeStatus {
+  activeTurns: number;
+  startedTurns: number;
+  completedTurns: number;
+  failedTurns: number;
+  abortedTurns: number;
+  lastSuccessAt?: string;
+  lastFailure?: {
+    timestamp: string;
+    turnId?: string;
+    category: AiFailureCategory;
+    stage: string;
+  };
 }
 
 class AgentTraceCallback extends BaseCallbackHandler {
@@ -311,6 +332,12 @@ export class Gateway {
   private purgeInterval?: NodeJS.Timeout;
   private liveAgentStreamingDisabled = false;
   private activeTurns = new Map<string, AbortController>();
+  private aiRuntime: Omit<AiRuntimeStatus, "activeTurns"> = {
+    startedTurns: 0,
+    completedTurns: 0,
+    failedTurns: 0,
+    abortedTurns: 0,
+  };
 
   constructor(
     agent: DeepAgent,
@@ -437,31 +464,44 @@ export class Gateway {
     }
     const abortController = new AbortController();
     this.activeTurns.set(turnKey, abortController);
-
-    // Add user message to session history
-    await this.sessions.addUserMessage(event);
-
-    // Build message array from session history
-    const history = await this.sessions.getMessages(event.platform, event.chatId);
-    const messages = history.map((m) => ({
-      role: m.role,
-      content: m.content,
-    }));
-    if (event.agentText && messages.length > 0) {
-      messages[messages.length - 1] = {
-        ...messages[messages.length - 1],
-        content: event.agentText,
-      };
-    }
+    const turnStartedAt = Date.now();
+    let assistantPersisted = false;
+    this.aiRuntime.startedTurns += 1;
+    logAiEvent("info", "turn.started", {
+      turnId: event.id,
+      platform: event.platform,
+      sessionId: event.chatId,
+      promptLength: event.text.length,
+      provider: process.env.LLM_PROVIDER || "unknown",
+      model: process.env.LLM_MODEL || "unknown",
+    });
 
     const traceCallback = new AgentTraceCallback(
       adapter instanceof WebAdapter ? adapter : undefined,
       event.chatId
     );
     const callbacks = [traceCallback];
-    let requestStage = "agent invocation";
+    let requestStage = "user persistence";
 
     try {
+      // Add user message to session history
+      await this.sessions.addUserMessage(event);
+
+      // Build message array from session history
+      requestStage = "history retrieval";
+      const history = await this.sessions.getMessages(event.platform, event.chatId);
+      const messages = history.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+      if (event.agentText && messages.length > 0) {
+        messages[messages.length - 1] = {
+          ...messages[messages.length - 1],
+          content: event.agentText,
+        };
+      }
+
+      requestStage = "agent invocation";
       const liveResult: LiveAgentResult =
         adapter?.supportsMessageUpdates() && this.canStreamAgent()
           ? await this.invokeAgentWithLiveUpdates(
@@ -533,6 +573,7 @@ export class Gateway {
       );
 
       // Add assistant response to session
+      requestStage = "assistant persistence";
       await this.sessions.addAssistantMessage(
         event.platform,
         event.chatId,
@@ -551,6 +592,7 @@ export class Gateway {
           })),
         ]
       );
+      assistantPersisted = true;
 
       // Send back to originating platform
       requestStage = "response delivery";
@@ -608,17 +650,86 @@ export class Gateway {
           `[Gateway] response delivered to ${event.platform}:${event.chatId}`
         );
       }
+      this.aiRuntime.completedTurns += 1;
+      this.aiRuntime.lastSuccessAt = new Date().toISOString();
+      logAiEvent("info", "turn.completed", {
+        turnId: event.id,
+        platform: event.platform,
+        sessionId: event.chatId,
+        durationMs: Date.now() - turnStartedAt,
+        assistantLength: delivery.text.length,
+        assistantPersisted,
+        leadResultSets: traceCallback.getLeadListOutputs().length,
+        propertyResultSets: traceCallback.getPropertyListOutputs().length,
+      });
     } catch (err) {
       if (abortController.signal.aborted) {
+        this.aiRuntime.abortedTurns += 1;
+        logAiEvent("warn", "turn.aborted", {
+          turnId: event.id,
+          platform: event.platform,
+          sessionId: event.chatId,
+          durationMs: Date.now() - turnStartedAt,
+          stage: requestStage,
+          assistantPersisted,
+        });
         console.log(`[Gateway] turn stopped for ${event.platform}:${event.chatId}`);
         return;
       }
-      console.error(`[Gateway] ${requestStage} error:`, err);
+      const serialized = serializeError(err);
+      const category = classifyAiFailure(serialized);
+      const failureTimestamp = new Date().toISOString();
+      this.aiRuntime.failedTurns += 1;
+      this.aiRuntime.lastFailure = {
+        timestamp: failureTimestamp,
+        turnId: event.id,
+        category,
+        stage: requestStage,
+      };
+      logAiEvent("error", "turn.failed", {
+        turnId: event.id,
+        platform: event.platform,
+        sessionId: event.chatId,
+        durationMs: Date.now() - turnStartedAt,
+        stage: requestStage,
+        category,
+        assistantPersisted,
+        toolExecutionStarted: traceCallback.hasStartedToolExecution(),
+        error: serialized,
+      });
+
+      const failureText =
+        "I couldn’t complete that request because the AI service returned an error. " +
+        `Please try again. Reference: ${event.id ?? "unavailable"}.`;
+      if (!assistantPersisted) {
+        try {
+          await this.sessions.addAssistantMessage(
+            event.platform,
+            event.chatId,
+            failureText,
+            event.id ? `assistant:${event.id}` : undefined
+          );
+          assistantPersisted = true;
+        } catch (persistenceError) {
+          logAiEvent("error", "turn.failure_persistence_failed", {
+            turnId: event.id,
+            platform: event.platform,
+            sessionId: event.chatId,
+            error: serializeError(persistenceError),
+          });
+        }
+      }
       if (adapter) {
-        await adapter.sendMessage(
-          event.chatId,
-          "❌ Sorry, I encountered an error processing your request."
-        );
+        try {
+          await adapter.sendMessage(event.chatId, failureText);
+        } catch (deliveryError) {
+          logAiEvent("error", "turn.failure_delivery_failed", {
+            turnId: event.id,
+            platform: event.platform,
+            sessionId: event.chatId,
+            error: serializeError(deliveryError),
+          });
+        }
       }
     } finally {
       if (this.activeTurns.get(turnKey) === abortController) {
@@ -910,7 +1021,20 @@ export class Gateway {
     }
     out.sessions = `${this.sessions.sessionCount} active`;
     out.storage = this.sessions.isPersistent ? "postgresql" : "memory";
+    out.release = process.env.APP_RELEASE || process.env.SOURCE_COMMIT || "unknown";
+    out.ai =
+      `${this.aiRuntime.completedTurns} completed, ` +
+      `${this.aiRuntime.failedTurns} failed, ` +
+      `${this.aiRuntime.abortedTurns} aborted, ` +
+      `${this.activeTurns.size} running`;
     return out;
+  }
+
+  aiStatus(): AiRuntimeStatus {
+    return {
+      ...this.aiRuntime,
+      activeTurns: this.activeTurns.size,
+    };
   }
 
   getAdapter<T extends BasePlatformAdapter = BasePlatformAdapter>(

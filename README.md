@@ -215,6 +215,35 @@ ordering is `gateway → web`. The gateway refuses to start in production withou
 a database and verifies that the Drizzle-managed chat and message tables exist,
 so manual migrations must finish before deployment.
 
+### AI failure logs
+
+Gateway turns emit single-line structured logs prefixed with `[AI]`. Search the
+Coolify gateway logs for `turn.failed`, `turn.aborted`, or
+`provider.request_failed`. Each failure includes the release, turn and session
+IDs, provider/model, elapsed time, failing stage, a normalized category, the
+nested provider error, and whether an assistant response had already been
+persisted. Prompts and CRM response data are not included in these structured
+events.
+
+The most useful failure categories are:
+
+- `provider_empty_content`: the Anthropic-compatible provider rejected a blank
+  text block around a tool call.
+- `provider_authentication`: the configured model credentials were rejected.
+- `provider_rate_limit`: the provider throttled the request.
+- `crm_access`: CRM authentication, Cloudflare, or access failed.
+- `timeout` / `aborted`: the turn exceeded its deadline or the client stopped it.
+
+The authorized gateway `/health` response also contains the deployed release,
+active AI turns, success/failure/abort counters, and the most recent failure.
+`docker-compose.yml` maps Coolify's `SOURCE_COMMIT` to `APP_RELEASE`, so runtime
+logs can be matched to the Git revision that is actually serving traffic.
+
+When an AI turn fails before producing an answer, the gateway persists a safe
+assistant error containing the same turn reference shown in the logs. This
+prevents an unanswered user row from silently contaminating later conversation
+context and gives support a direct value to search.
+
 For WhatsApp, open the first deployment's runtime logs and scan the pairing QR
 code. The `whatsapp-auth` volume preserves that pairing across deployments.
 Generated files use the `agent-output` volume. Configure regular backups for
