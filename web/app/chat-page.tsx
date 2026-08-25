@@ -24,8 +24,6 @@ import {
   ToolStatus,
   type FollowUpValues,
 } from "./lead-results";
-import { compactLeadMessageText } from "./lead-message";
-import { compactPropertyMessageText } from "./property-message";
 import { PropertyDrawer, PropertyResults } from "./property-results";
 import { authClient } from "../lib/auth-client";
 
@@ -572,20 +570,14 @@ export default function ChatPage({ user }: ChatPageProps) {
                             ) : null}
                             {message.parts.map((part, index) => {
                               if (part.type === "text") {
-                                const content =
-                                  message.role === "assistant" && leadListPart
-                                    ? compactLeadMessageText(part.text, leadListPart.data)
-                                    : message.role === "assistant" && propertyListPart
-                                      ? compactPropertyMessageText(part.text, propertyListPart.data)
-                                      : part.text;
-                                return content ? (
+                                return part.text ? (
                                   message.role === "assistant" ? (
                                     <MarkdownMessage
-                                      content={content}
+                                      content={part.text}
                                       key={`${message.id}-text-${index}`}
                                     />
                                   ) : (
-                                    <p key={`${message.id}-text-${index}`}>{content}</p>
+                                    <p key={`${message.id}-text-${index}`}>{part.text}</p>
                                   )
                                 ) : null;
                               }

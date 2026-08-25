@@ -8,9 +8,9 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 COPY test ./test
-# The root test suite also covers this pure web formatting helper. Copy only
-# the files it imports instead of pulling the full Next.js app into this image.
-COPY web/app/lead-message.ts web/app/property-message.ts web/app/chat-types.ts ./web/app/
+# The root test suite covers the chat turn presentation helper. Copy only its
+# web type dependency instead of pulling the full Next.js app into this image.
+COPY web/app/chat-types.ts ./web/app/
 COPY web/app/api/chat/turn-presentation.ts ./web/app/api/chat/
 
 # Coolify exposes configured build arguments to RUN instructions. Keep unit
