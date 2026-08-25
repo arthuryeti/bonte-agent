@@ -130,6 +130,21 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
     defaultModel: "meta-llama/Meta-Llama-3-70B-Instruct",
   },
 
+  surplus: {
+    name: "surplus",
+    displayName: "Surplus Intelligence",
+    transport: "openai_chat",
+    isAggregator: true,
+    baseUrl: "https://api.surplusintelligence.ai/v1",
+    apiKeyEnvVar: "SURPLUS_API_KEY",
+    baseUrlEnvVar: "SURPLUS_BASE_URL",
+    defaultModel: "claude-opus-5",
+    // Match Surplus's OpenAI-compatible example request exactly.
+    omitTemperature: true,
+    // Some marketplace sellers omit delta.role in every SSE chunk.
+    defaultStreamingRole: "assistant",
+  },
+
   // ── Direct providers ──
 
   openai: {

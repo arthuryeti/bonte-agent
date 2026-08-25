@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
+import { AIMessage } from "@langchain/core/messages";
 import {
   createLanguageModel,
   resolveProvider,
@@ -13,6 +14,8 @@ const ENV_KEYS = [
   "KIMI_API_KEY",
   "KIMI_CODING_API_KEY",
   "KIMI_BASE_URL",
+  "SURPLUS_API_KEY",
+  "SURPLUS_BASE_URL",
 ] as const;
 
 const originalEnv = new Map(
@@ -77,5 +80,88 @@ describe("Kimi provider", () => {
     assert.equal(resolved.baseUrl, "https://api.kimi.com/coding");
     assert.equal(resolved.transport, "anthropic_messages");
     assert.equal(resolved.model, "k3-256k");
+  });
+});
+
+describe("Surplus Intelligence provider", () => {
+  it("uses the OpenAI-compatible endpoint and Claude Opus 5 by default", () => {
+    process.env.LLM_PROVIDER = "surplus";
+    process.env.SURPLUS_API_KEY = "test-key";
+
+    const resolved = resolveProvider();
+
+    assert.equal(resolved.config.name, "surplus");
+    assert.equal(
+      resolved.baseUrl,
+      "https://api.surplusintelligence.ai/v1"
+    );
+    assert.equal(resolved.transport, "openai_chat");
+    assert.equal(resolved.model, "claude-opus-5");
+    const model = createLanguageModel(resolved);
+    assert.ok(model instanceof ChatOpenAI);
+    assert.equal(model.temperature, undefined);
+  });
+
+  it("honors endpoint and model overrides", () => {
+    process.env.LLM_PROVIDER = "surplus";
+    process.env.SURPLUS_API_KEY = "test-key";
+    process.env.SURPLUS_BASE_URL = "https://surplus.example/v1";
+    process.env.LLM_MODEL = "another-model";
+
+    const resolved = resolveProvider();
+
+    assert.equal(resolved.baseUrl, "https://surplus.example/v1");
+    assert.equal(resolved.model, "another-model");
+  });
+
+  it("normalizes streaming deltas that omit the assistant role", async () => {
+    process.env.LLM_PROVIDER = "surplus";
+    process.env.SURPLUS_API_KEY = "test-key";
+
+    const model = createLanguageModel() as ChatOpenAI;
+    const completions = model.completions as unknown as {
+      completionWithRetry: (
+        ...args: unknown[]
+      ) => Promise<AsyncIterable<unknown>>;
+    };
+    completions.completionWithRetry = async () => ({
+      async *[Symbol.asyncIterator]() {
+        yield {
+          id: "completion-1",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "claude-opus-5",
+          choices: [
+            {
+              index: 0,
+              delta: { content: "OK" },
+              finish_reason: null,
+            },
+          ],
+        };
+        yield {
+          id: "completion-1",
+          object: "chat.completion.chunk",
+          created: 0,
+          model: "claude-opus-5",
+          choices: [
+            {
+              index: 0,
+              delta: {},
+              finish_reason: "stop",
+            },
+          ],
+        };
+      },
+    });
+
+    const chunks = [];
+    for await (const chunk of await model.stream("hello")) {
+      chunks.push(chunk);
+    }
+
+    assert.ok(chunks.length > 0);
+    assert.ok(chunks.every((chunk) => AIMessage.isInstance(chunk)));
+    assert.equal(chunks.map((chunk) => chunk.text).join(""), "OK");
   });
 });

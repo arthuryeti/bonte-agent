@@ -1,8 +1,35 @@
-import { ChatOpenAI } from "@langchain/openai";
+import { ChatOpenAI, ChatOpenAICompletions } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import type { BaseLanguageModel } from "@langchain/core/language_models/base";
+import type { OpenAI } from "openai";
 import { PROVIDER_REGISTRY } from "./registry.js";
 import type { ResolvedProvider } from "./types.js";
+
+/**
+ * OpenAI-compatible gateways occasionally omit `delta.role` from their SSE
+ * stream. OpenAI's converter treats such chunks as generic chat messages,
+ * which agents reject. Providers opt into this fallback explicitly.
+ */
+class DefaultRoleChatOpenAICompletions extends ChatOpenAICompletions {
+  constructor(
+    fields: ConstructorParameters<typeof ChatOpenAICompletions>[0],
+    private readonly defaultStreamingRole: "assistant"
+  ) {
+    super(fields);
+  }
+
+  protected override _convertCompletionsDeltaToBaseMessageChunk(
+    delta: Record<string, unknown>,
+    rawResponse: OpenAI.Chat.Completions.ChatCompletionChunk,
+    defaultRole?: OpenAI.Chat.ChatCompletionRole
+  ) {
+    return super._convertCompletionsDeltaToBaseMessageChunk(
+      delta,
+      rawResponse,
+      defaultRole ?? this.defaultStreamingRole
+    );
+  }
+}
 
 /**
  * Resolve a provider from environment variables.
@@ -85,7 +112,7 @@ export function createLanguageModel(resolved?: ResolvedProvider): BaseLanguageMo
 
   switch (transport) {
     case "openai_chat": {
-      return new ChatOpenAI({
+      const fields = {
         model,
         apiKey,
         maxTokens: config.maxTokens,
@@ -95,6 +122,18 @@ export function createLanguageModel(resolved?: ResolvedProvider): BaseLanguageMo
           defaultHeaders: config.extraHeaders,
         },
         ...temperature,
+      };
+
+      return new ChatOpenAI({
+        ...fields,
+        ...(config.defaultStreamingRole
+          ? {
+              completions: new DefaultRoleChatOpenAICompletions(
+                fields,
+                config.defaultStreamingRole
+              ),
+            }
+          : {}),
       });
     }
 

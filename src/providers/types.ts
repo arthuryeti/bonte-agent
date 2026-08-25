@@ -51,6 +51,8 @@ export interface ProviderConfig {
   omitTemperature?: boolean;
   /** Always use the provider's streaming transport, aggregating for invoke() */
   streaming?: boolean;
+  /** Default role for OpenAI-compatible SSE deltas that omit delta.role */
+  defaultStreamingRole?: "assistant";
   /** Resolve provider-specific endpoint, transport, or model defaults */
   resolveRuntime?: (
     context: ProviderRuntimeContext

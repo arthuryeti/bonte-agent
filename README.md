@@ -266,7 +266,7 @@ Instead of calling OpenAI or Anthropic directly, the agent routes through a **pr
 
 | Type | Providers | What you get |
 |------|-----------|--------------|
-| **Aggregators** | `openrouter`, `together`, `nous`, `huggingface` | One API key → 200+ models. Switch models by changing `LLM_MODEL`. |
+| **Aggregators** | `openrouter`, `together`, `nous`, `huggingface`, `surplus` | Use one provider key and switch its models with `LLM_MODEL`. |
 | **Direct** | `openai`, `anthropic`, `deepseek`, `groq`, `ollama`, `zai`, `kimi-coding` (`kimi` / `moonshot` aliases) | Talk straight to the vendor's API. |
 
 ### Switching providers
@@ -283,6 +283,11 @@ OPENROUTER_API_KEY=sk-or-...
 LLM_PROVIDER=together
 LLM_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo
 TOGETHER_API_KEY=...
+
+# Surplus Intelligence (OpenAI-compatible)
+LLM_PROVIDER=surplus
+LLM_MODEL=claude-opus-5
+SURPLUS_API_KEY=...
 
 # OpenAI (direct)
 LLM_PROVIDER=openai
@@ -309,6 +314,9 @@ LLM_PROVIDER=kimi-coding
 LLM_MODEL=k3
 KIMI_API_KEY=...
 ```
+
+The Surplus provider uses `https://api.surplusintelligence.ai/v1` by default.
+Set `SURPLUS_BASE_URL` only if you need to override that endpoint.
 
 Kimi Code keys beginning with `sk-kimi-` automatically use the
 Anthropic-compatible `https://api.kimi.com/coding` endpoint. The provider
