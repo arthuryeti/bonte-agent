@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { beforeEach, afterEach, test } from "node:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import PizZip from "pizzip";
+import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, StandardFonts } from "pdf-lib";
 import { MemoryWorkflowStore, setWorkflowStore } from "../src/workflows/store.js";
 import { attachmentPrompt, deleteAttachment, getAttachment, listAttachments, purgeExpiredAttachments, readAttachment, uploadAttachment, validateDocxArchive, type WorkflowAttachment } from "../src/workflows/documents-attachments.js";
-import { generateNdaDraft, ndaConfigSchema, renderNdaDocx, saveEmailDraft, updateNdaIntake, validateNdaFacts, type NdaFact } from "../src/workflows/documents.js";
+import { documentCapabilities, generateNdaDraft, loadNdaConfig, ndaConfigSchema, renderNdaDocx, renderNdaPdfForm, saveEmailDraft, updateNdaIntake, validateNdaFacts, type NdaFact } from "../src/workflows/documents.js";
 
 const context = { workspaceId: "test-workspace", actorId: "test-workspace", conversationId: "test-conversation" };
 const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -96,8 +97,11 @@ test("deletion and retention remove document bytes and extracted evidence", asyn
   assert.equal(await store.get(context.workspaceId, "nda-intake", context.conversationId), null);
 });
 
-test("NDA creation requires Bonte configuration and both supporting document categories", async () => {
-  assert.equal((await updateNdaIntake(context)).status, "setup_required");
+test("NDA defaults to the exact Bonte PDF and still requires both supporting document categories", async () => {
+  const capabilities = await documentCapabilities();
+  assert.equal(capabilities.nda.status, "configured");
+  assert.deepEqual(capabilities.nda.outputFormats, ["editable PDF"]);
+  assert.equal((await updateNdaIntake(context)).status, "needs_input");
   await configure();
   const check = await updateNdaIntake(context);
   assert.equal(check.status, "needs_input");
@@ -150,6 +154,108 @@ test("an unavailable NDA renderer does not publish a completed draft or generate
   await assert.rejects(() => generateNdaDraft(context), /No completed NDA draft/);
   assert.equal((await listAttachments(context)).filter((attachment) => attachment.generated).length, 0);
   assert.equal((await store.list(context.workspaceId, "nda-draft")).length, 0);
+});
+
+test("exact NDA PDF: Portuguese examples, evidence-backed revision and editable save/reopen", async () => {
+  const loaded = (await loadNdaConfig())!;
+  const original = await PDFDocument.load(loaded.template);
+  const content = (pdf: PDFDocument, page: number) => {
+    const streams = pdf.getPage(page).node.Contents();
+    const items = streams instanceof PDFArray ? streams.asArray().map((ref) => pdf.context.lookup(ref, PDFRawStream)) : [streams as PDFRawStream];
+    return Buffer.concat(items.map((stream) => Buffer.from(decodePDFRawStream(stream).decode())));
+  };
+  assert.equal(original.getPageCount(), 4);
+  assert.equal(original.getForm().getFields().length, 0);
+  const examples = [
+    { agreement_date: "7 de setembro de 2026", receiving_party: "Exemplo Imóveis, Lda.", receiving_address: "Rua de Teste, 25, 1200-001 Lisboa",
+      receiving_entity: "Exemplo Imóveis, Lda.", signatory_name: "João Gonçalves", signatory_title: "Sócio-Gerente" },
+    { agreement_date: "30 de setembro de 2026", receiving_party: "Sociedade Exemplo de Investimentos Imobiliários e Gestão, Lda.",
+      receiving_address: "Avenida de Teste, n.º 123, 4.º Esq., 2750-001 Cascais, Portugal",
+      receiving_entity: "Sociedade Exemplo, Lda.", signatory_name: "Maria da Conceição Gonçalves", signatory_title: "Procuradora com poderes" },
+  ];
+  for (const [index, values] of examples.entries()) {
+    const ctx = { ...context, conversationId: `pdf-example-${index}` };
+    const party = await uploadAttachment(ctx, { fileName: "fictional-party.docx", mimeType: mime, category: "party", bytes: docx(Object.values(values).join("; ")) });
+    await uploadAttachment(ctx, { fileName: "fictional-transaction.docx", mimeType: mime, category: "transaction", bytes: docx("Fictional test only: potential purchase of property TEST123.") });
+    const facts: NdaFact[] = Object.entries(values).map(([key, value]) => ({ key, value, source: key === "agreement_date"
+      ? { type: "agreement", userStatement: `Use ${value}.` }
+      : { type: "document", attachmentId: party.id, page: 1, quote: party.pages[0].text } }));
+    assert.equal((await updateNdaIntake(ctx, { facts })).status, "ready_to_draft");
+    process.env.BONTE_LIBREOFFICE_PATH = join(directory, "not-needed-for-exact-pdf");
+    const draft = await generateNdaDraft(ctx);
+    assert.ok("downloads" in draft);
+    assert.equal(draft.downloads.length, 1);
+    assert.equal(draft.docxAttachmentId, undefined);
+    assert.equal(draft.pageCount, 4);
+    assert.deepEqual(draft.editableFields, Object.keys(values));
+    const { bytes } = await readAttachment(ctx, draft.pdfAttachmentId);
+    const output = await PDFDocument.load(bytes);
+    const form = output.getForm();
+    assert.ok(form.acroForm.dict.lookup(PDFName.of("DR"), PDFDict).lookup(PDFName.of("Font"), PDFDict).has(PDFName.of("Helvetica")), "PDF readers need the form font resource to save edits.");
+    assert.equal(form.getFields().length, 6);
+    for (const [key, value] of Object.entries(values)) {
+      const field = form.getTextField(key);
+      assert.equal(field.getText(), value);
+      assert.equal(field.isReadOnly(), false);
+      assert.equal(field.acroField.getWidgets().length, 1);
+      assert.ok(field.acroField.getWidgets()[0].getNormalAppearance(), "Saved widget needs an appearance, not just a logical value.");
+    }
+    for (let p = 0; p < 4; p++) {
+      assert.deepEqual(output.getPage(p).getSize(), original.getPage(p).getSize());
+      // Original clause/signature drawing streams are preserved; only annotations/resources are added.
+      assert.ok(content(output, p).includes(content(original, p)), `Original content on page ${p + 1} must remain intact.`);
+    }
+    assert.ok(!form.getFields().some((field) => /signature|assinatura/.test(field.getName())));
+    const exportDir = process.env.BONTE_NDA_TEST_OUTPUT_DIR;
+    if (exportDir) {
+      await mkdir(exportDir, { recursive: true });
+      await writeFile(join(exportDir, `nda-test-${index + 1}.pdf`), bytes);
+    }
+    if (index === 0) {
+      form.getTextField("signatory_name").setText("Ana Cláudia Simões");
+      form.updateFieldAppearances(await output.embedFont(StandardFonts.Helvetica));
+      const edited = Buffer.from(await output.save());
+      const reopened = await PDFDocument.load(edited);
+      assert.equal(reopened.getForm().getTextField("signatory_name").getText(), "Ana Cláudia Simões");
+      assert.equal(reopened.getForm().getTextField("receiving_party").getText(), values.receiving_party);
+      assert.ok(reopened.getForm().getTextField("signatory_name").acroField.getWidgets()[0].getNormalAppearance());
+      if (exportDir) await writeFile(join(exportDir, "nda-test-edited.pdf"), edited);
+      const correction: NdaFact = { key: "agreement_date", value: "8 de setembro de 2026", source: { type: "agreement", userStatement: "Change the date to 8 de setembro de 2026." } };
+      assert.equal((await updateNdaIntake(ctx, { facts: [correction] })).status, "needs_input");
+      assert.equal((await updateNdaIntake(ctx, { facts: [correction], resolveFields: ["agreement_date"] })).status, "ready_to_draft");
+      const revision = await generateNdaDraft(ctx);
+      assert.ok("downloads" in revision);
+      assert.equal(revision.revision, 2);
+      const savedRevision = await PDFDocument.load((await readAttachment(ctx, revision.pdfAttachmentId)).bytes);
+      assert.equal(savedRevision.getForm().getTextField("agreement_date").getText(), correction.value);
+      assert.equal((await PDFDocument.load((await readAttachment(ctx, draft.pdfAttachmentId)).bytes)).getForm().getTextField("agreement_date").getText(), values.agreement_date);
+    }
+  }
+});
+
+test("exact NDA PDF rejects overflow, unsupported characters and changed source without publishing", async () => {
+  const loaded = (await loadNdaConfig())!;
+  const values = { agreement_date: "7 de setembro de 2026", receiving_party: "Exemplo Imóveis, Lda.", receiving_address: "Rua de Teste, 25, Lisboa",
+    receiving_entity: "Exemplo Imóveis, Lda.", signatory_name: "João Gonçalves", signatory_title: "Sócio-Gerente" };
+  const party = await uploadAttachment(context, { fileName: "fictional-party.docx", mimeType: mime, category: "party", bytes: docx(Object.values(values).join("; ") + "; " + "W".repeat(80)) });
+  await uploadAttachment(context, { fileName: "fictional-transaction.docx", mimeType: mime, category: "transaction", bytes: docx("Fictional transaction TEST123.") });
+  const facts: NdaFact[] = Object.entries(values).map(([key, value]) => ({ key, value: key === "receiving_entity" ? "W".repeat(80) : value, source: key === "agreement_date"
+    ? { type: "agreement", userStatement: `Use ${value}.` }
+    : { type: "document", attachmentId: party.id, page: 1, quote: party.pages[0].text } }));
+  assert.equal((await updateNdaIntake(context, { facts })).status, "ready_to_draft");
+  await assert.rejects(() => generateNdaDraft(context), /too long.*not clipped/);
+  assert.equal((await listAttachments(context)).filter((attachment) => attachment.generated).length, 0);
+  assert.equal((await store.list(context.workspaceId, "nda-draft")).length, 0);
+  facts.find((fact) => fact.key === "receiving_entity")!.value = "测试";
+  await assert.rejects(() => renderNdaPdfForm(loaded.template, loaded.config, facts), /cannot display/);
+  facts.find((fact) => fact.key === "receiving_entity")!.value = "Name\nSecond line";
+  await assert.rejects(() => renderNdaPdfForm(loaded.template, loaded.config, facts), /single-line/);
+  const changed = await PDFDocument.load(loaded.template);
+  changed.setTitle("A changed template");
+  await writeFile(join(directory, "changed.pdf"), await changed.save());
+  await writeFile(join(directory, "changed.json"), JSON.stringify({ ...loaded.config, templatePath: "changed.pdf" }));
+  process.env.BONTE_NDA_CONFIG_PATH = join(directory, "changed.json");
+  await assert.rejects(() => loadNdaConfig(), /checksum/);
 });
 
 test("email revisions retain recipient and attachments, preserve previous versions and never send", async () => {

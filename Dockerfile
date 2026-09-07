@@ -8,6 +8,7 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 COPY test ./test
+COPY templates ./templates
 COPY api.json ./
 COPY web/drizzle ./web/drizzle
 # The root test suite covers the chat turn presentation helper. Copy only its
@@ -33,6 +34,7 @@ RUN apt-get update \
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/templates ./templates
 
 RUN mkdir -p /app/.whatsapp-auth /app/output/pdf \
     && chown -R node:node /app/.whatsapp-auth /app/output

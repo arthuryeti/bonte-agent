@@ -40,9 +40,15 @@ Set `CRM_LISTING_URLS_PATH` to the resulting JSON file in the deployed gateway; 
 
 ## Bonte's NDA template
 
-Place Bonte's approved DOCX template and its JSON configuration on the private `workflow-config` volume mounted at `/app/config:ro`, or configure an equivalent private deployment mount. Set `BONTE_NDA_CONFIG_PATH=/app/config/nda.json`. Populate the volume through the deployment administrator's file/volume tooling; do not commit identity documents, templates containing private information or OAuth tokens.
+The default is now the supplied four-page `templates/nda/NDA_BonteFilipidis_Template2026_pt.pdf`, preserved byte-for-byte with SHA-256 `518bc1e2c62d066d985ade8f010e69960e5bafa8712b0ba6a7f9c048b5c86f01`. The gateway image includes it and `templates/nda/nda.json`; leave `BONTE_NDA_CONFIG_PATH` unset to use it. No LibreOffice conversion is involved for this PDF.
 
-The following illustrates configuration structure, not Bonte's actual legal fields or document checklist:
+Generation adds six editable PDF fields: the complete date, receiving party's legal name and address, represented entity/person, signatory name and title. Clauses, logo, pagination and both signature lines remain as supplied. Users can edit the downloaded fields in a form-capable PDF reader and save a copy, or clarify sourced facts in chat to generate a new revision. Downloaded edits do not update the stored intake. Clause editing is not provided by these fields.
+
+The source date prints **2025** despite the 2026 filename. The date widget covers that area with the user's explicitly chosen full Portuguese date; no year is assumed. This is an overlay, so underlying source text still contains 2025. The original footer's **AMI 1384** versus the body's **13824** is preserved and surfaced for review. The retained party/transaction document requirements still apply; the template does not add transaction-specific clauses or require invented duration/jurisdiction terms.
+
+Fields use 7–9 pt text and reject overflow, newlines and characters the PDF font cannot display before publishing a draft. Long legal names or addresses that cannot fit need a shorter approved value or a revised template. The PDF remains unsigned. The source checksum prevents silently applying field positions to a different PDF.
+
+For an approved replacement, place the template and its JSON configuration on the private `workflow-config` volume mounted at `/app/config:ro`, and set `BONTE_NDA_CONFIG_PATH=/app/config/nda.json`. DOCX templates remain supported and produce editable DOCX plus LibreOffice-rendered PDF. The following illustrates custom DOCX configuration, not the bundled PDF's actual fields:
 
 ```json
 {
@@ -63,7 +69,11 @@ The following illustrates configuration structure, not Bonte's actual legal fiel
 
 An administrator must adapt fields and document counts to Bonte's approved template and representative supporting documents. Use flat placeholders such as `{party_one_name}` in the DOCX while preserving its approved clauses, tables and signature blocks. Agreement choices come from the user; party and transaction facts require document/page evidence. Missing, unreadable or conflicting evidence stops draft completion and produces a targeted request. Template loops, arbitrary replacements and invented clauses are unsupported.
 
-NDA drafting produces versioned DOCX and actual LibreOffice-rendered PDF files. A synthetic one-page template was rendered and visually checked during development; final pagination and content still need review against Bonte's actual template, which was not supplied. Structured email drafts are saved and revised separately, with selected property identities and attachments retained; no email provider or sending feature was added.
+The exact PDF tests use two fictional Portuguese examples, including longer names/addresses and accents, and an editable save/reopen example. They verify all four original page content streams, field values and appearances, signature preservation, evidence-backed revisions, and rejection of overflow/unsupported characters/changed templates. Run `node --import tsx --test test/document-workflows.test.ts`; optionally set `BONTE_NDA_TEST_OUTPUT_DIR=output/pdf/nda-template-tests` to retain the three review PDFs. These are test documents, not client agreements.
+
+Visual QA rendered all three PDFs with Poppler and checked their fields. All four pages were pixel-identical to the source outside the six field rectangles (with a two-pixel antialiasing margin). Independent pypdf checks confirmed six editable canonical fields, matching widget values and non-empty appearances in each saved output. The full suite passed **192 tests**, with zero failures and one optional external-PostgreSQL test skipped; the backend build passed. This change has not been deployed.
+
+Structured email drafts are saved and revised separately, with selected property identities and attachments retained; no email provider or sending feature was added.
 
 ## Team Google Calendar
 

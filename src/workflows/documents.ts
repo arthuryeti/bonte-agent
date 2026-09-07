@@ -3,10 +3,11 @@ import { execFile } from "node:child_process";
 import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { dirname, resolve, join } from "node:path";
 import { tmpdir } from "node:os";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import { PDFDocument, PDFHexString, PDFName, StandardFonts, rgb } from "pdf-lib";
 import { z } from "zod";
 import { getWorkflowStore } from "./store.js";
 import { resolveExactProperty } from "./crm-properties.js";
@@ -20,12 +21,19 @@ const docxMime = "application/vnd.openxmlformats-officedocument.wordprocessingml
 const safeKey = z.string().regex(/^[a-z][a-z0-9_]{0,79}$/);
 export const ndaConfigSchema = z.object({
   version: z.string().min(1), templatePath: z.string().min(1),
+  format: z.enum(["docx", "pdf"]).default("docx"),
+  templateSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  reviewNotes: z.array(z.string()).default([]),
   title: z.string().min(1).default("Bonte NDA draft"),
   requiredDocuments: z.array(z.object({ category: z.enum(["party", "transaction"]), label: z.string().min(1), minimum: z.number().int().min(1).max(20).default(1) }))
     .refine((items) => ["party", "transaction"].every((category) => items.some((item) => item.category === category)), "Both party and transaction documents are mandatory."),
   fields: z.array(z.object({ key: safeKey, label: z.string().min(1), required: z.boolean().default(true), source: z.enum(["party", "transaction", "agreement"]),
-    allowedValues: z.array(z.string().min(1)).optional(), maxLength: z.number().int().positive().max(4000).default(500) })).min(1),
-}).refine((config) => new Set(config.fields.map((field) => field.key)).size === config.fields.length, "NDA field keys must be unique.");
+    allowedValues: z.array(z.string().min(1)).optional(), maxLength: z.number().int().positive().max(4000).default(500),
+    pdf: z.object({ page: z.number().int().positive(), x: z.number().nonnegative(), y: z.number().nonnegative(),
+      width: z.number().positive(), height: z.number().positive(), coverBackground: z.boolean().default(false) }).optional(),
+  })).min(1),
+}).refine((config) => new Set(config.fields.map((field) => field.key)).size === config.fields.length, "NDA field keys must be unique.")
+  .refine((config) => config.format !== "pdf" || (config.templateSha256 && config.fields.every((field) => field.pdf)), "PDF templates require a source checksum and a position for every field.");
 export type NdaConfig = z.infer<typeof ndaConfigSchema>;
 export const ndaFactSchema = z.object({
   key: safeKey, value: z.string().trim().min(1).max(4000),
@@ -39,23 +47,26 @@ interface NdaIntake { conversationId: string; actorId: string; templateVersion: 
 const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
 
 export async function loadNdaConfig(): Promise<{ config: NdaConfig; template: Buffer; sha256: string } | null> {
-  const configPath = process.env.BONTE_NDA_CONFIG_PATH;
-  if (!configPath) return null;
+  const configPath = process.env.BONTE_NDA_CONFIG_PATH || fileURLToPath(new URL("../../templates/nda/nda.json", import.meta.url));
   try {
     const config = ndaConfigSchema.parse(JSON.parse(await readFile(resolve(configPath), "utf8")));
     config.templatePath = resolve(dirname(resolve(configPath)), config.templatePath);
     const template = await readFile(config.templatePath);
-    validateDocxArchive(template);
-    return { config, template, sha256: createHash("sha256").update(template).digest("hex") };
-  } catch { throw new DocumentWorkflowError("Bonte's NDA configuration or DOCX template is invalid. Ask an administrator to check BONTE_NDA_CONFIG_PATH.", 503); }
+    const sha256 = createHash("sha256").update(template).digest("hex");
+    if (config.templateSha256 && config.templateSha256 !== sha256) throw new Error("Template checksum mismatch.");
+    if (config.format === "docx") validateDocxArchive(template);
+    else if (!template.subarray(0, 5).equals(Buffer.from("%PDF-"))) throw new Error("Invalid PDF template.");
+    return { config, template, sha256 };
+  } catch { throw new DocumentWorkflowError("Bonte's NDA configuration or template is invalid. Ask an administrator to check BONTE_NDA_CONFIG_PATH and the approved template checksum.", 503); }
 }
 export async function documentCapabilities() {
   const template = await loadNdaConfig();
   return { uploads: { formats: ["PDF", "DOCX", "PNG", "JPEG"], maxMegabytes: 15, maxPdfPages: 40 },
-    nda: template ? { status: "configured", templateVersion: template.config.version, requiredDocuments: template.config.requiredDocuments, fields: template.config.fields }
-      : { status: "setup_required", missing: "Bonte's approved DOCX NDA template and required field/document configuration (BONTE_NDA_CONFIG_PATH)." },
+    nda: template ? { status: "configured", templateVersion: template.config.version, requiredDocuments: template.config.requiredDocuments, fields: template.config.fields,
+      outputFormats: template.config.format === "pdf" ? ["editable PDF"] : ["DOCX", "PDF"], reviewNotes: template.config.reviewNotes }
+      : { status: "setup_required", missing: "Bonte's approved NDA template and required field/document configuration (BONTE_NDA_CONFIG_PATH)." },
     email: { drafting: true, sending: false },
-    runtime: "PDF text/OCR needs Poppler and Tesseract. NDA PDF output needs LibreOffice and Poppler; availability is checked when used." };
+    runtime: "PDF text/OCR needs Poppler and Tesseract. The bundled PDF NDA is filled directly; DOCX templates need LibreOffice and Poppler for PDF output." };
 }
 
 export function validateNdaFacts(config: NdaConfig, facts: NdaFact[], attachments: WorkflowAttachment[]): string[] {
@@ -159,29 +170,72 @@ export async function renderNdaPdf(docx: Buffer): Promise<{ bytes: Buffer; pages
   finally { await rm(temporary, { recursive: true, force: true }); }
 }
 
+/** Add editable fields to the approved PDF; preserve the original page content. */
+export async function renderNdaPdfForm(template: Buffer, config: NdaConfig, facts: NdaFact[]): Promise<{ bytes: Buffer; pages: number }> {
+  const pdf = await PDFDocument.load(template, { updateMetadata: false });
+  const form = pdf.getForm();
+  if (form.getFields().length) throw new DocumentWorkflowError("The approved PDF must not already contain form fields.", 503);
+  // ponytail: WinAnsi covers Portuguese; embed a Unicode font if other scripts are required.
+  const font = await pdf.embedFont(StandardFonts.Helvetica);
+  // Readers need the font in the form's default resources when users edit a value.
+  form.acroForm.dict.set(PDFName.of("DR"), pdf.context.obj({ Font: { [font.name]: font.ref } }));
+  for (const field of config.fields) {
+    const box = field.pdf;
+    const page = box && pdf.getPages()[box.page - 1];
+    if (!box || !page || box.x + box.width > page.getWidth() || box.y + box.height > page.getHeight()) {
+      throw new DocumentWorkflowError(`Invalid PDF position for ${field.label}.`, 503);
+    }
+    const value = facts.find((fact) => fact.key === field.key)?.value ?? "";
+    if ((field.required && !value) || value.length > field.maxLength || /[\x00-\x1f\x7f]/.test(value)) {
+      throw new DocumentWorkflowError(`${field.label} needs a single-line value within its ${field.maxLength}-character limit.`);
+    }
+    let width: number;
+    try { width = font.widthOfTextAtSize(value, 1); }
+    catch { throw new DocumentWorkflowError(`${field.label} contains characters the template font cannot display. Use an approved spelling or an updated template.`); }
+    const size = Math.min(9, (box.width - 4) / (width || 1));
+    if (size < 7 || font.heightAtSize(size) > box.height - 2) {
+      throw new DocumentWorkflowError(`${field.label} is too long for the template's line. Provide a shorter approved value or use an updated template; the text was not clipped.`);
+    }
+    const input = form.createTextField(field.key);
+    input.acroField.dict.set(PDFName.of("TU"), PDFHexString.fromText(field.label));
+    input.setMaxLength(field.maxLength);
+    input.setText(value);
+    input.disableScrolling();
+    if (field.required) input.enableRequired();
+    // The date widget covers the source's printed 2025 with the user's full date.
+    input.addToPage(page, { ...box, borderWidth: 0, borderColor: undefined, backgroundColor: box.coverBackground ? rgb(1, 1, 1) : undefined, textColor: rgb(0, 0, 0), font });
+    input.setFontSize(size);
+  }
+  form.updateFieldAppearances(font);
+  return { bytes: Buffer.from(await pdf.save()), pages: pdf.getPageCount() };
+}
+
 export async function generateNdaDraft(context: DocumentContext) {
   const check = await updateNdaIntake(context);
   if (check.status !== "ready_to_draft") return check;
   const loaded = await loadNdaConfig();
   const intake = await scopedIntake(context);
   if (!loaded || !intake || loaded.sha256 !== intake.templateSha256) throw new DocumentWorkflowError("The NDA template changed; recheck the intake before drafting.");
-  const bytes = renderNdaDocx(loaded.template, loaded.config, intake.facts);
-  const pdf = await renderNdaPdf(bytes);
+  const bytes = loaded.config.format === "docx" ? renderNdaDocx(loaded.template, loaded.config, intake.facts) : undefined;
+  const pdf = bytes ? await renderNdaPdf(bytes) : await renderNdaPdfForm(loaded.template, loaded.config, intake.facts);
   const id = randomUUID();
   const previous = (await getWorkflowStore().list<{ conversationId: string; revision: number }>(context.workspaceId, "nda-draft", 10_000))
     .filter((record) => record.data.conversationId === context.conversationId);
   const revision = 1 + Math.max(0, ...previous.map((record) => record.data.revision));
-  const docx = await saveGeneratedAttachment(context, { bytes, fileName: `Bonte-NDA-draft-v${revision}.docx`, mimeType: docxMime });
+  const docx = bytes ? await saveGeneratedAttachment(context, { bytes, fileName: `Bonte-NDA-draft-v${revision}.docx`, mimeType: docxMime }) : undefined;
   let rendered: WorkflowAttachment | undefined;
   try {
   rendered = await saveGeneratedAttachment(context, { bytes: pdf.bytes, fileName: `Bonte-NDA-draft-v${revision}.pdf`, mimeType: "application/pdf" });
   const result = { id, conversationId: context.conversationId, actorId: context.actorId, revision, status: "draft", templateVersion: loaded.config.version,
-    templateSha256: loaded.sha256, facts: intake.facts, sourceAttachmentIds: intake.attachmentIds, docxAttachmentId: docx.id, pdfAttachmentId: rendered.id,
-    pageCount: pdf.pages, createdAt: new Date().toISOString(), expiresAt: documentExpiry(), review: "Review pagination and signature blocks in the rendered PDF before using this draft." };
+    templateSha256: loaded.sha256, facts: intake.facts, sourceAttachmentIds: intake.attachmentIds, docxAttachmentId: docx?.id, pdfAttachmentId: rendered.id,
+    editableFields: loaded.config.format === "pdf" ? loaded.config.fields.map((field) => field.key) : undefined,
+    pageCount: pdf.pages, createdAt: new Date().toISOString(), expiresAt: documentExpiry(), reviewNotes: loaded.config.reviewNotes,
+    review: loaded.config.format === "pdf" ? "Open the PDF in a form-capable reader to edit the completed details and save a copy. Ask in chat to correct sourced facts and generate another revision. Review all fields before signing; signatures remain blank. Downloaded edits do not update the saved intake."
+      : "Review pagination and signature blocks in the rendered PDF before using this draft." };
   await getWorkflowStore().put(context.workspaceId, "nda-draft", id, result);
-  return { ...result, downloads: [attachmentSummary(docx), attachmentSummary(rendered)] };
+  return { ...result, downloads: [...(docx ? [attachmentSummary(docx)] : []), attachmentSummary(rendered)] };
   } catch (error) {
-    await Promise.allSettled([deleteAttachment(context, docx.id), ...(rendered ? [deleteAttachment(context, rendered.id)] : [])]);
+    await Promise.allSettled([...(docx ? [deleteAttachment(context, docx.id)] : []), ...(rendered ? [deleteAttachment(context, rendered.id)] : [])]);
     throw error;
   }
 }

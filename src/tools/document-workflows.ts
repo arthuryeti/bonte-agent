@@ -33,7 +33,7 @@ export const documentWorkflowTools = [
     schema: z.object({ facts: z.array(ndaFactSchema).max(100).optional(), attachmentIds: z.array(z.string().uuid()).max(40).optional(), resolveFields: z.array(z.string()).max(100).optional() }),
   }),
   tool(async () => result(() => generateNdaDraft(getWorkflowContext())), {
-    name: "generate_nda_draft", description: "Populate the approved Bonte NDA template only after intake is complete. Returns editable DOCX and rendered PDF draft downloads with source/template versions; missing/conflicting evidence or rendering failures stop publication. Include the provided /api/attachments download URLs as Markdown links. Explain this is a draft with PDF pagination/signature review still needed; never claim it is signed or visually checked.",
+    name: "generate_nda_draft", description: "Populate the approved Bonte NDA template only after intake is complete. The bundled exact PDF returns an editable PDF with completion fields; configured DOCX templates return DOCX and rendered PDF. Missing/conflicting evidence, text that cannot fit, or rendering failures stop publication. Include the returned /api/attachments download URLs as Markdown links and explain the returned review instructions/notes. Users can edit PDF fields in a form-capable reader, or correct sourced facts in chat with prepare_nda_intake and regenerate a new revision. Never claim the draft is signed or visually checked.",
     schema: z.object({}),
   }),
   tool(async (input) => result(() => saveEmailDraft(getWorkflowContext(), input)), {

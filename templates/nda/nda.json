@@ -1,0 +1,29 @@
+{
+  "version": "bonte-2026-pt-pdf-v1",
+  "templatePath": "NDA_BonteFilipidis_Template2026_pt.pdf",
+  "templateSha256": "518bc1e2c62d066d985ade8f010e69960e5bafa8712b0ba6a7f9c048b5c86f01",
+  "format": "pdf",
+  "title": "Acordo de Confidencialidade - Bonte & Filipidis",
+  "reviewNotes": [
+    "The source filename says 2026 but its date line prints 2025. Supply the user's full Portuguese date including the year; the editable date field covers the original date area.",
+    "Clauses, branding, pagination and signature lines are preserved. The source footer says AMI 1384 while the body says 13824; this source discrepancy has not been changed."
+  ],
+  "requiredDocuments": [
+    { "category": "party", "label": "party identification and signatory authority", "minimum": 1 },
+    { "category": "transaction", "label": "transaction details", "minimum": 1 }
+  ],
+  "fields": [
+    { "key": "agreement_date", "label": "Data completa do acordo (dia de mês de ano)", "source": "agreement", "maxLength": 32,
+      "pdf": { "page": 1, "x": 318.7, "y": 624.2, "width": 92.3, "height": 11.5, "coverBackground": true } },
+    { "key": "receiving_party", "label": "Parte Receptora - nome legal", "source": "party", "maxLength": 140,
+      "pdf": { "page": 1, "x": 56.7, "y": 510.5, "width": 351, "height": 11 } },
+    { "key": "receiving_address", "label": "Parte Receptora - morada", "source": "party", "maxLength": 160,
+      "pdf": { "page": 1, "x": 56.7, "y": 497.4, "width": 306, "height": 11 } },
+    { "key": "receiving_entity", "label": "Por (entidade ou pessoa representada na assinatura)", "source": "party", "maxLength": 80,
+      "pdf": { "page": 4, "x": 77.82, "y": 439.1, "width": 153, "height": 11 } },
+    { "key": "signatory_name", "label": "Nome do signatário da Parte Receptora", "source": "party", "maxLength": 80,
+      "pdf": { "page": 4, "x": 88.38, "y": 426.06, "width": 148.5, "height": 11 } },
+    { "key": "signatory_title", "label": "Título / qualidade do signatário", "source": "party", "maxLength": 80,
+      "pdf": { "page": 4, "x": 86.49, "y": 413.02, "width": 148.5, "height": 11 } }
+  ]
+}
