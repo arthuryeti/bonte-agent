@@ -37,7 +37,7 @@ describe("gateway session storage", () => {
       allowInMemory: true,
     });
     await store.connect();
-    await store.ensureSession("web", "memory-chat");
+    await store.getSession("web", "memory-chat");
     await store.addUserMessage(userMessage("memory-chat", "Show my newest CRM leads"));
     await store.addAssistantMessage("web", "memory-chat", "Here they are.");
 
@@ -57,7 +57,9 @@ describe("gateway session storage", () => {
     { skip: !process.env.TEST_DATABASE_URL },
     async () => {
       const databaseUrl = process.env.TEST_DATABASE_URL!;
-      const chatId = `postgres-${randomUUID()}`;
+      const workspaceId = `postgres-${randomUUID()}`;
+      const chatId = `${workspaceId}_history`;
+      const fileName = "property-historical.pdf";
       const firstStore = new SessionStore({
         databaseUrl,
         databaseSsl: false,
@@ -70,7 +72,8 @@ describe("gateway session storage", () => {
         chatId,
         "It is safely stored.",
         undefined,
-        [{ type: "lead-list", id: "leads-1", data: { leads: [{ id: "42" }] } }],
+        [{ type: "lead-list", id: "leads-1", data: { leads: [{ id: "42" }] } },
+          { type: "attachment", id: fileName, data: { fileName, mimeType: "application/pdf" } }],
       );
       await firstStore.close();
 
@@ -90,6 +93,8 @@ describe("gateway session storage", () => {
           ],
         );
         assert.equal(messages[1]?.dataParts?.[0]?.id, "leads-1");
+        assert.equal((await secondStore.findLegacyBrochureAttachment(workspaceId, fileName))?.chatId, chatId);
+        assert.equal(await secondStore.findLegacyBrochureAttachment("another-workspace", fileName), undefined);
         assert.equal((await secondStore.listSessions("web")).some(
           (session) => session.id === chatId,
         ), true);

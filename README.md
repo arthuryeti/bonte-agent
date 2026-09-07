@@ -608,9 +608,7 @@ The agent can call any endpoint defined in `api.json`:
    ```typescript
    myprovider: {
      name: "myprovider",
-     displayName: "My Provider",
      transport: "openai_chat",
-     isAggregator: false,
      baseUrl: "https://api.myprovider.com/v1",
      apiKeyEnvVar: "MYPROVIDER_API_KEY",
      baseUrlEnvVar: "MYPROVIDER_BASE_URL",
@@ -627,3 +625,7 @@ The agent can call any endpoint defined in `api.json`:
    ```
 
 That's it — the factory handles the rest.
+
+## Agent workflows
+
+Lead audits and monitoring, saved follow-ups, exact property matching, contact intake, email/NDA drafts and team-calendar viewings are implemented. Apply the new workflow migration and configure the enabled integrations using [the setup guide](docs/agent-workflows-setup.md). Missing credentials, document inputs or verified CRM mappings are reported by the agent; no production writes are enabled by installing this release alone.

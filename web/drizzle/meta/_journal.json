@@ -15,6 +15,13 @@
       "when": 1786525933929,
       "tag": "0001_gateway_persistence",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1788772332945,
+      "tag": "0002_wakeful_logan",
+      "breakpoints": true
     }
   ]
 }

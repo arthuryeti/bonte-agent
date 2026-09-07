@@ -1,0 +1,62 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { attachmentSummary, deleteAttachment, listAttachments, MAX_ATTACHMENT_BYTES, readAttachment, uploadAttachment, DocumentWorkflowError } from "./documents-attachments.js";
+import type { WorkflowContext } from "./context.js";
+import { getWorkflowStore } from "./store.js";
+import { finishFollowUp } from "./tasks.js";
+
+export function trustedHttpContext(request:IncomingMessage,requireConversation=false):WorkflowContext {
+  const workspaceId=String(request.headers["x-workspace-id"]||"");
+  const actorId=String(request.headers["x-actor-id"]||workspaceId);
+  const conversationId=String(request.headers["x-conversation-id"]||"");
+  const suffix = conversationId.startsWith(`${workspaceId}_`) ? conversationId.slice(workspaceId.length + 1) : "";
+  if(!/^[a-zA-Z0-9-]{1,128}$/.test(workspaceId)||actorId!==workspaceId||
+    (conversationId && !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(suffix))||(requireConversation&&!conversationId))throw new DocumentWorkflowError("Invalid authenticated workflow scope.");
+  return {workspaceId,actorId,conversationId:conversationId||`${workspaceId}_downloads`};
+}
+async function bytes(request:IncomingMessage,limit:number):Promise<Buffer>{
+  if(Number(request.headers["content-length"])>limit)throw new DocumentWorkflowError("Request exceeds the upload limit.",413);
+  const chunks:Buffer[]=[];let size=0;
+  for await(const chunk of request){const part=Buffer.from(chunk);size+=part.length;if(size>limit)throw new DocumentWorkflowError("Request exceeds the upload limit.",413);chunks.push(part);}return Buffer.concat(chunks);
+}
+function json(response:ServerResponse,status:number,body:unknown){response.writeHead(status,{"content-type":"application/json","cache-control":"private, no-store","x-content-type-options":"nosniff"});response.end(JSON.stringify(body));}
+
+/** Called only after the gateway bearer check; workspace headers are set by Next auth. */
+export async function serveWorkflowHttp(request:IncomingMessage,response:ServerResponse,url:URL):Promise<void>{
+  try {
+    const context=trustedHttpContext(request,request.method==="POST"&&url.pathname==="/attachments");
+    if(url.pathname==="/attachments"){
+      const id=url.searchParams.get("id");
+      if(request.method==="POST"){
+        let fileName:string;
+        try{fileName=decodeURIComponent(String(request.headers["x-file-name"]||""));}catch{throw new DocumentWorkflowError("Invalid encoded file name.");}
+        const attachment=await uploadAttachment(context,{fileName,mimeType:String(request.headers["x-file-mime"]||""),category:String(request.headers["x-file-category"]||"other"),bytes:await bytes(request,MAX_ATTACHMENT_BYTES)});
+        json(response,201,{attachment:attachmentSummary(attachment)});return;
+      }
+      if(request.method==="GET"&&id){
+        const {attachment,bytes:body}=await readAttachment(context,id);
+        const fileName=attachment.fileName.replace(/[\r\n"\\]/g,"_");
+        response.writeHead(200,{"content-type":attachment.mimeType,"content-disposition":`attachment; filename="${fileName.replace(/[^\x20-\x7E]/g,"_")}"; filename*=UTF-8''${encodeURIComponent(fileName)}`,"content-length":body.length,"cache-control":"private, no-store","x-content-type-options":"nosniff"});response.end(body);return;
+      }
+      if(request.method==="GET"){json(response,200,{attachments:(await listAttachments(context)).map(attachmentSummary)});return;}
+      if(request.method==="DELETE"&&id){json(response,200,await deleteAttachment(context,id));return;}
+    }
+    if(url.pathname==="/workflows"){
+      const store=getWorkflowStore();
+      if(request.method==="GET"){
+        const [notifications,followUps,monitors]=await Promise.all([store.list(context.workspaceId,"notification",50),store.list(context.workspaceId,"follow_up",100),store.list(context.workspaceId,"lead_monitor",30)]);
+        json(response,200,{workspaceId:context.workspaceId,notifications,followUps,monitors});return;
+      }
+      if(request.method==="POST"){
+        let body:Record<string,unknown>;
+        try{body=JSON.parse((await bytes(request,4096)).toString());}catch(error){if(error instanceof DocumentWorkflowError)throw error;throw new DocumentWorkflowError("Provide valid workflow JSON.");}
+        if(!body||typeof body!=="object"||typeof body.id!=="string"||body.id.length>256)throw new DocumentWorkflowError("A saved workflow ID is required.");
+        if(body.action==="read"){
+          const row=await store.get(context.workspaceId,"notification",body.id);if(!row){json(response,404,{error:"Notification not found."});return;}
+          await store.compareAndSet(context.workspaceId,"notification",body.id,row.version,{...row.data,read:true});json(response,200,{read:true});return;
+        }
+        if(body.action==="complete"||body.action==="cancel"){json(response,200,await finishFollowUp(context,body.id,body.action==="complete"?"completed":"cancelled"));return;}
+      }
+    }
+    json(response,405,{error:"Unsupported workflow request."});
+  }catch(error){json(response,error instanceof DocumentWorkflowError?error.status:503,{error:error instanceof DocumentWorkflowError?error.message:"Workflow request failed. Please try again."});}
+}

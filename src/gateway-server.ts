@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { unlink } from "node:fs/promises";
+import path from "node:path";
 import { createCrmAgent } from "./agent.js";
 import { Gateway } from "./gateway/gateway.js";
 import { WebAdapter } from "./gateway/platforms/web.js";
@@ -6,6 +8,10 @@ import { GatewayWebSocketServer } from "./gateway/websocket-server.js";
 import type { GatewayConfig } from "./gateway/types.js";
 import { describeResolvedProvider } from "./providers/factory.js";
 import { logAiEvent } from "./observability.js";
+import { initializeWorkflowStore } from "./workflows/store.js";
+import { WorkflowWorker } from "./workflows/tasks.js";
+import { fetchAllLeads, queryLeads, auditLeads } from "./workflows/crm-leads.js";
+import { purgeExpiredAttachments } from "./workflows/documents-attachments.js";
 
 /**
  * Gateway server entry point.
@@ -31,13 +37,12 @@ function buildConfig(): GatewayConfig {
   );
 
   if (process.env.WEB_GATEWAY_ENABLED !== "false") {
-    platforms.push({ enabled: true, platform: "web" });
+    platforms.push({ platform: "web" });
   }
 
   // Telegram
   if (process.env.TELEGRAM_BOT_TOKEN) {
     platforms.push({
-      enabled: true,
       platform: "telegram",
       extra: {
         botToken: process.env.TELEGRAM_BOT_TOKEN,
@@ -54,7 +59,6 @@ function buildConfig(): GatewayConfig {
   // WhatsApp
   if (process.env.WHATSAPP_ENABLED === "true") {
     platforms.push({
-      enabled: true,
       platform: "whatsapp",
       extra: {
         authDir: process.env.WHATSAPP_AUTH_DIR || ".whatsapp-auth",
@@ -108,6 +112,30 @@ function buildConfig(): GatewayConfig {
 
 async function main() {
   const config = buildConfig();
+  const workflowStore = await initializeWorkflowStore();
+  const worker = new WorkflowWorker(workflowStore, async (_scope, filters) => {
+    const query: import("./workflows/crm-leads.js").LeadQuery = { broker: typeof filters.agentName === "string" ? filters.agentName : undefined, origin: typeof filters.origin === "string" ? filters.origin : undefined,
+      category: filters.category === "Sales" || filters.category === "Listings" ? filters.category : undefined };
+    const dataset = await fetchAllLeads(query);
+    const report = auditLeads({ ...dataset, leads: queryLeads(dataset, query) }, {
+      ...(typeof filters.firstResponseHours === "number" ? {firstResponseHours:filters.firstResponseHours}:{}),
+      ...(typeof filters.inactivityHours === "number" ? {inactivityHours:filters.inactivityHours}:{}),
+    });
+    return { coverage: report.coverage, counts: report.counts, denominator: report.denominator,
+      findings: report.attentionCandidates.map(f => ({leadId:f.leadId,classification:f.classification,reason:f.reason,status:f.status})).sort((a,b)=>String(a.leadId).localeCompare(String(b.leadId))) };
+  }, async () => {
+    const now = new Date().toISOString();
+    const expired = (await Promise.all(["attachment", "nda-intake", "nda-draft", "email-draft"].map(kind => workflowStore.expired(kind, now, 100)))).flat();
+    for (const scope of new Set(expired.map(row => row.workspaceId))) await purgeExpiredAttachments(scope);
+    for (const kind of ["audit_run", "notification", "generated_file"]) {
+      for (const row of await workflowStore.expired(kind, now, 100)) {
+        if (kind === "generated_file" && path.basename(row.id) === row.id) {
+          await unlink(path.resolve("output/pdf", row.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+        }
+        await workflowStore.remove(row.workspaceId, kind, row.id);
+      }
+    }
+  });
 
   const agent = createCrmAgent("gateway");
   console.log(`[LLM] ${describeResolvedProvider()}`);
@@ -118,6 +146,7 @@ async function main() {
 
   const gateway = new Gateway(agent, config);
   await gateway.start();
+  worker.start();
 
   let webServer: GatewayWebSocketServer | undefined;
   const webAdapter = gateway.getAdapter<WebAdapter>("web");
@@ -140,8 +169,10 @@ async function main() {
   const shutdown = async (signal: string) => {
     console.log(`\n${signal} received, shutting down...`);
     clearInterval(statusInterval);
+    await worker.stop();
     await webServer?.stop();
     await gateway.stop();
+    await workflowStore.close();
     process.exit(0);
   };
 

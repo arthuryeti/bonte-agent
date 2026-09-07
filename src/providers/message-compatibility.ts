@@ -1,4 +1,4 @@
-import { AIMessage, type BaseMessage } from "@langchain/core/messages";
+import { AIMessage, type AIMessageFields, type BaseMessage } from "@langchain/core/messages";
 import { createMiddleware } from "langchain";
 import {
   classifyAiFailure,
@@ -28,7 +28,8 @@ interface SanitizedMessages {
 
 function cloneAssistantMessage(
   message: AIMessage,
-  content: AIMessage["content"]
+  content: AIMessage["content"],
+  overrides: Pick<AIMessageFields, "tool_calls" | "invalid_tool_calls" | "additional_kwargs"> = {}
 ): AIMessage {
   return new AIMessage({
     content,
@@ -39,6 +40,32 @@ function cloneAssistantMessage(
     tool_calls: message.tool_calls,
     invalid_tool_calls: message.invalid_tool_calls,
     usage_metadata: message.usage_metadata,
+    ...overrides,
+  });
+}
+
+/** Some compatible providers serialize no-argument tool calls as "" instead of "{}". */
+export async function repairEmptyToolArguments(message: AIMessage, tools: readonly unknown[]): Promise<AIMessage> {
+  const repaired = new Set<NonNullable<AIMessage["invalid_tool_calls"]>[number]>();
+  const toolCalls = [...message.tool_calls ?? []];
+  for (const call of message.invalid_tool_calls ?? []) {
+    if (!call.id || !call.name || typeof call.args !== "string" || call.args.trim() || toolCalls.some(valid => valid.id === call.id)) continue;
+    const bound = tools.find(tool => typeof tool === "object" && tool !== null && "name" in tool && tool.name === call.name) as { schema?: { safeParseAsync?: (value: unknown) => Promise<{ success: boolean }> } } | undefined;
+    if (typeof bound?.schema?.safeParseAsync !== "function") continue;
+    try {
+      if (!(await bound.schema.safeParseAsync({})).success) continue;
+    } catch { continue; }
+    toolCalls.push({ id: call.id, name: call.name, args: {}, type: "tool_call" });
+    repaired.add(call);
+  }
+  if (!repaired.size) return message;
+  const repairedIds = new Map([...repaired].map(call => [call.id, call.name]));
+  const rawCalls = message.additional_kwargs.tool_calls?.map(call => repairedIds.get(call.id) === call.function?.name
+    ? { ...call, function: { ...call.function, arguments: "{}" } } : call);
+  return cloneAssistantMessage(message, message.content, {
+    tool_calls: toolCalls,
+    invalid_tool_calls: message.invalid_tool_calls?.filter(call => !repaired.has(call)),
+    additional_kwargs: { ...message.additional_kwargs, ...(rawCalls ? { tool_calls: rawCalls } : {}) },
   });
 }
 
@@ -121,7 +148,15 @@ export const providerMessageCompatibilityMiddleware = createMiddleware({
     }
 
     try {
-      return await handler({ ...request, messages: sanitized.messages });
+      const response = await handler({ ...request, messages: sanitized.messages });
+      const normalized = await repairEmptyToolArguments(response, request.tools);
+      if (normalized !== response) logAiEvent("warn", "provider.empty_tool_arguments_normalized", {
+        provider: process.env.LLM_PROVIDER || "unknown",
+        model: process.env.LLM_MODEL || "unknown",
+        repairedCalls: (response.invalid_tool_calls?.length ?? 0) - (normalized.invalid_tool_calls?.length ?? 0),
+      });
+      if (normalized.invalid_tool_calls?.length) throw new Error("The model provider returned missing or malformed tool arguments. Those tool calls were not executed; please retry with the required details.");
+      return normalized;
     } catch (error) {
       const serialized = serializeError(error);
       logAiEvent("error", "provider.request_failed", {

@@ -158,9 +158,3 @@ export function createLanguageModel(resolved?: ResolvedProvider): BaseLanguageMo
   }
 }
 
-/**
- * Convenience helper: resolve provider + build model in one call.
- */
-export function createModel(): BaseLanguageModel {
-  return createLanguageModel();
-}

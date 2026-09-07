@@ -8,6 +8,8 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src ./src
 COPY test ./test
+COPY api.json ./
+COPY web/drizzle ./web/drizzle
 # The root test suite covers the chat turn presentation helper. Copy only its
 # web type dependency instead of pulling the full Next.js app into this image.
 COPY web/app/chat-types.ts ./web/app/
@@ -25,7 +27,7 @@ ENV NODE_ENV=production
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg \
+    && apt-get install -y --no-install-recommends ffmpeg poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-por libreoffice-writer fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json ./

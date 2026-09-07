@@ -54,9 +54,7 @@ function resolveKimiRuntime({
 
 const kimiCodingProvider: ProviderConfig = {
   name: "kimi-coding",
-  displayName: "Kimi / Kimi Coding Plan",
   transport: "openai_chat",
-  isAggregator: false,
   baseUrl: "https://api.moonshot.ai/v1",
   apiKeyEnvVar: "KIMI_API_KEY",
   apiKeyEnvVarAliases: ["KIMI_CODING_API_KEY"],
@@ -73,10 +71,6 @@ const kimiCodingProvider: ProviderConfig = {
 
 /**
  * Provider registry — single source of truth for supported LLM providers.
- *
- * Aggregators (isAggregator = true) let you switch models without
- * changing provider config. You only need one API key to access
- * 200+ models via OpenRouter, or dozens via Together / Nous Portal.
  */
 
 export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
@@ -84,9 +78,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   openrouter: {
     name: "openrouter",
-    displayName: "OpenRouter",
     transport: "openai_chat",
-    isAggregator: true,
     baseUrl: "https://openrouter.ai/api/v1",
     apiKeyEnvVar: "OPENROUTER_API_KEY",
     baseUrlEnvVar: "OPENROUTER_BASE_URL",
@@ -99,9 +91,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   together: {
     name: "together",
-    displayName: "Together AI",
     transport: "openai_chat",
-    isAggregator: true,
     baseUrl: "https://api.together.xyz/v1",
     apiKeyEnvVar: "TOGETHER_API_KEY",
     baseUrlEnvVar: "TOGETHER_BASE_URL",
@@ -110,9 +100,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   nous: {
     name: "nous",
-    displayName: "Nous Portal",
     transport: "openai_chat",
-    isAggregator: true,
     baseUrl: "https://inference-api.nousresearch.com/v1",
     apiKeyEnvVar: "NOUS_API_KEY",
     baseUrlEnvVar: "NOUS_BASE_URL",
@@ -121,9 +109,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   huggingface: {
     name: "huggingface",
-    displayName: "Hugging Face Inference",
     transport: "openai_chat",
-    isAggregator: true,
     baseUrl: "https://api-inference.huggingface.co/v1",
     apiKeyEnvVar: "HF_API_KEY",
     baseUrlEnvVar: "HF_BASE_URL",
@@ -132,9 +118,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   surplus: {
     name: "surplus",
-    displayName: "Surplus Intelligence",
     transport: "openai_chat",
-    isAggregator: true,
     baseUrl: "https://api.surplusintelligence.ai/v1",
     apiKeyEnvVar: "SURPLUS_API_KEY",
     baseUrlEnvVar: "SURPLUS_BASE_URL",
@@ -149,9 +133,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   openai: {
     name: "openai",
-    displayName: "OpenAI",
     transport: "openai_chat",
-    isAggregator: false,
     baseUrl: "https://api.openai.com/v1",
     apiKeyEnvVar: "OPENAI_API_KEY",
     baseUrlEnvVar: "OPENAI_BASE_URL",
@@ -160,9 +142,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   anthropic: {
     name: "anthropic",
-    displayName: "Anthropic",
     transport: "anthropic_messages",
-    isAggregator: false,
     baseUrl: "https://api.anthropic.com",
     apiKeyEnvVar: "ANTHROPIC_API_KEY",
     baseUrlEnvVar: "ANTHROPIC_BASE_URL",
@@ -171,9 +151,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   deepseek: {
     name: "deepseek",
-    displayName: "DeepSeek",
     transport: "openai_chat",
-    isAggregator: false,
     baseUrl: "https://api.deepseek.com",
     apiKeyEnvVar: "DEEPSEEK_API_KEY",
     baseUrlEnvVar: "DEEPSEEK_BASE_URL",
@@ -182,9 +160,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   groq: {
     name: "groq",
-    displayName: "Groq",
     transport: "openai_chat",
-    isAggregator: false,
     baseUrl: "https://api.groq.com/openai/v1",
     apiKeyEnvVar: "GROQ_API_KEY",
     baseUrlEnvVar: "GROQ_BASE_URL",
@@ -193,9 +169,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   ollama: {
     name: "ollama",
-    displayName: "Ollama (local)",
     transport: "openai_chat",
-    isAggregator: false,
     baseUrl: "http://127.0.0.1:11434/v1",
     apiKeyEnvVar: "OLLAMA_API_KEY", // usually "ollama" or empty
     baseUrlEnvVar: "OLLAMA_BASE_URL",
@@ -204,9 +178,7 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
 
   zai: {
     name: "zai",
-    displayName: "Z.AI / GLM (Zhipu AI)",
     transport: "openai_chat",
-    isAggregator: false,
     baseUrl: "https://api.z.ai/api/paas/v4",
     apiKeyEnvVar: "ZAI_API_KEY",
     baseUrlEnvVar: "ZAI_BASE_URL",
@@ -218,10 +190,3 @@ export const PROVIDER_REGISTRY: Record<string, ProviderConfig> = {
   moonshot: kimiCodingProvider,
 };
 
-/** List of aggregator provider names. */
-export const AGGREGATOR_NAMES = Object.values(PROVIDER_REGISTRY)
-  .filter((p) => p.isAggregator)
-  .map((p) => p.name);
-
-/** List of all provider names. */
-export const ALL_PROVIDER_NAMES = Object.keys(PROVIDER_REGISTRY);

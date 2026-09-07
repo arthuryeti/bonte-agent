@@ -26,6 +26,8 @@ import {
 } from "./lead-results";
 import { PropertyDrawer, PropertyResults } from "./property-results";
 import { authClient } from "../lib/auth-client";
+import { WorkflowAttachments } from "./workflow-attachments";
+import { WorkflowPanel } from "./workflow-panel";
 
 const MarkdownMessage = dynamic(
   () => import("./markdown-message").then((module) => module.MarkdownMessage),
@@ -138,6 +140,8 @@ function propertyFromLead(
 export default function ChatPage({ user }: ChatPageProps) {
   const router = useRouter();
   const [input, setInput] = useState("");
+  const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
+  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
   const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
   const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
   const [hasLoadedWorkspace, setHasLoadedWorkspace] = useState(false);
@@ -247,16 +251,16 @@ export default function ChatPage({ user }: ChatPageProps) {
     action?: ScheduleFollowUpAction
   ) => {
     const trimmedText = text.trim();
-    if (!trimmedText || isWorking) return;
+    if (!trimmedText || isWorking || isUploadingDocuments) return;
 
     clearError();
     touchActiveChat(trimmedText);
     void sendMessage(
       { text: trimmedText },
-      { body: { sessionId, ...(action ? { action } : {}) } }
+      { body: { sessionId, attachmentIds, ...(action ? { action } : {}) } }
     );
     setInput("");
-  }, [clearError, isWorking, sendMessage, sessionId, touchActiveChat]);
+  }, [clearError, isWorking, sendMessage, sessionId, touchActiveChat, attachmentIds, isUploadingDocuments]);
 
   const createNewChat = useCallback(async () => {
     if (messages.length === 0 && activeChat?.title === DEFAULT_CHAT_TITLE) {
@@ -509,6 +513,7 @@ export default function ChatPage({ user }: ChatPageProps) {
 
           <div className="conversation" aria-live="polite">
             <div className="conversation-content">
+              {hasLoadedWorkspace ? <WorkflowPanel refreshKey={`${sessionId}:${status}`} /> : null}
               {isLoadingChat || !hasLoadedWorkspace ? (
                 <div className="chat-loading" aria-label="Loading conversation">
                   <i /><i /><i />
@@ -547,6 +552,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                       (part) =>
                         part.type === "data-lead-list" ||
                         part.type === "data-property-list" ||
+                        part.type === "data-attachment" ||
                         (part.type === "text" && part.text.trim().length > 0)
                     );
                     const showThinkingBubble =
@@ -599,6 +605,18 @@ export default function ChatPage({ user }: ChatPageProps) {
                                   />
                                 );
                               }
+                              if (part.type === "data-attachment") {
+                                return (
+                                  <a
+                                    className="pdf-download"
+                                    href={`/api/files?name=${encodeURIComponent(part.data.fileName)}`}
+                                    download={part.data.fileName}
+                                    key={part.id || `${message.id}-file-${index}`}
+                                  >
+                                    Download {part.data.fileName}
+                                  </a>
+                                );
+                              }
                               return null;
                             })}
                           </div>
@@ -634,6 +652,7 @@ export default function ChatPage({ user }: ChatPageProps) {
 
           <div className="composer-wrap">
             <div className="composer-inner">
+              {hasLoadedWorkspace ? <WorkflowAttachments key={sessionId} sessionId={sessionId} disabled={isWorking || isLoadingChat} onChange={setAttachmentIds} onBusyChange={setIsUploadingDocuments} /> : null}
               <form className="composer" onSubmit={handleSubmit}>
                 <textarea
                   aria-label="Message the CRM assistant"
@@ -649,7 +668,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                     <span aria-hidden="true" />
                   </button>
                 ) : (
-                  <button className="send" type="submit" disabled={!input.trim() || isLoadingChat} aria-label="Send message">
+                  <button className="send" type="submit" disabled={!input.trim() || isLoadingChat || isUploadingDocuments} aria-label="Send message">
                     <span aria-hidden="true">↑</span>
                   </button>
                 )}

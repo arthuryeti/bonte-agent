@@ -21,7 +21,7 @@ export interface ChatMessage {
 }
 
 export interface ChatMessageDataPart {
-  type: "lead-list" | "property-list";
+  type: "lead-list" | "property-list" | "attachment" | "source-document";
   id: string;
   data: unknown;
 }
@@ -86,7 +86,9 @@ function asDataParts(value: unknown): ChatMessageDataPart[] | undefined {
     if (!part || typeof part !== "object") return false;
     const record = part as Record<string, unknown>;
     return (
-      (record.type === "lead-list" || record.type === "property-list") &&
+      (record.type === "lead-list" ||
+        record.type === "property-list" ||
+        record.type === "attachment" || record.type === "source-document") &&
       typeof record.id === "string" &&
       "data" in record
     );
@@ -183,10 +185,6 @@ export class SessionStore {
     return `${platform}:${chatId}`;
   }
 
-  async ensureSession(platform: string, chatId: string): Promise<ChatSession> {
-    return this.getSession(platform, chatId);
-  }
-
   async getSession(platform: string, chatId: string): Promise<ChatSession> {
     const key = this.key(platform, chatId);
     const existing = this.sessions.get(key);
@@ -277,6 +275,7 @@ export class SessionStore {
       content: event.text,
       timestamp: event.timestamp,
       platformMessageId: event.id,
+      dataParts: event.attachmentIds?.map(id => ({type:"source-document",id,data:{attachmentId:id}})),
     };
     const nextTitle =
       session.title === DEFAULT_CHAT_TITLE
@@ -378,6 +377,31 @@ export class SessionStore {
 
   async getMessages(platform: string, chatId: string): Promise<ChatMessage[]> {
     return (await this.getSession(platform, chatId)).messages;
+  }
+
+  /** Exact, server-written assistant attachment metadata proves legacy ownership. */
+  async findLegacyBrochureAttachment(workspaceId: string, fileName: string): Promise<{ chatId: string; timestamp: Date } | undefined> {
+    if (!/^[a-zA-Z0-9-]{1,128}$/.test(workspaceId) || !/^property-[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$/.test(fileName)) return undefined;
+    const prefix = `${workspaceId}_`;
+    if (this.pool) {
+      const result = await this.pool.query<{ chat_id: string; created_at: Date }>(
+        `SELECT chat_id, created_at FROM gateway_messages
+         WHERE platform = 'web' AND role = 'assistant'
+           AND LEFT(chat_id, LENGTH($1)) = $1
+           AND EXISTS (SELECT 1 FROM jsonb_array_elements(data_parts) AS part
+             WHERE part->>'type' = 'attachment' AND part->>'id' = $2
+               AND part->'data'->>'fileName' = $2
+               AND part->'data'->>'mimeType' = 'application/pdf')
+         ORDER BY created_at ASC LIMIT 1`, [prefix, fileName]);
+      const row = result.rows[0];
+      return row ? { chatId: row.chat_id, timestamp: row.created_at } : undefined;
+    }
+    return [...this.sessions.values()].filter((session) => session.platform === "web" && session.chatId.startsWith(prefix))
+      .flatMap((session) => session.messages.filter((message) => message.role === "assistant" && message.dataParts?.some((part) => {
+        const data = part.data as { fileName?: unknown; mimeType?: unknown } | null;
+        return part.type === "attachment" && part.id === fileName && data?.fileName === fileName && data.mimeType === "application/pdf";
+      })).map((message) => ({ chatId: session.chatId, timestamp: message.timestamp })))
+      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())[0];
   }
 
   async hasMessage(

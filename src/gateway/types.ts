@@ -5,15 +5,7 @@
  * interface so the agent doesn't care where messages come from.
  */
 
-export type Platform = "telegram" | "whatsapp" | "web" | "local";
-
-export interface Attachment {
-  type: "image" | "audio" | "video" | "document";
-  url?: string;
-  buffer?: Buffer;
-  mimeType?: string;
-  filename?: string;
-}
+export type Platform = "telegram" | "whatsapp" | "web";
 
 export interface MessageEvent {
   /** Unique message ID from the platform */
@@ -30,14 +22,14 @@ export interface MessageEvent {
   text: string;
   /** Optional private instruction used for the current agent turn only. */
   agentText?: string;
+  /** Validated input documents; persisted as source references, never embedded secrets. */
+  attachmentIds?: string[];
   /** When the message was sent */
   timestamp: Date;
   /** True if this is a group chat */
   isGroup: boolean;
   /** ID of message this is replying to */
   replyTo?: string;
-  /** Any attached files */
-  attachments?: Attachment[];
   /** True when this was typed by the linked WhatsApp account owner. */
   fromOwner?: boolean;
   /** True while a human owner has taken over this conversation. */
@@ -48,7 +40,7 @@ export interface SendOptions {
   /** Reply to a specific message ID */
   replyTo?: string;
   /** Parse mode for rich text */
-  parseMode?: "markdown" | "html" | "plain";
+  parseMode?: "markdown" | "plain";
 }
 
 export interface SentMessageRef {
@@ -84,12 +76,8 @@ export interface SendLocationOptions extends SendOptions {
 }
 
 export interface PlatformConfig {
-  /** Is this platform enabled? */
-  enabled: boolean;
   /** Platform identifier */
   platform: Platform;
-  /** Default chat ID for cron / outbound delivery */
-  homeChannel?: string;
   /** Platform-specific extra config */
   extra?: Record<string, unknown>;
 }
@@ -97,8 +85,8 @@ export interface PlatformConfig {
 export interface GatewayConfig {
   /** Platform configurations */
   platforms: PlatformConfig[];
-  /** Session reset policy: "never" | "after_minutes" | "daily" */
-  resetPolicy?: "never" | "after_minutes" | "daily";
+  /** Session reset policy */
+  resetPolicy?: "never" | "after_minutes";
   /** Minutes of inactivity before resetting session (when resetPolicy="after_minutes") */
   resetAfterMinutes?: number;
 }

@@ -13,10 +13,17 @@ export interface CrmToolStatusView {
   label: string;
 }
 
+export interface AttachmentView {
+  fileName: string;
+  downloadName?: string;
+  mimeType?: string;
+}
+
 export type CrmChatDataParts = {
   "lead-list": LeadListView;
   "property-list": PropertyListView;
   "tool-status": CrmToolStatusView;
+  attachment: AttachmentView;
 };
 
 export type CrmChatMessage = UIMessage<unknown, CrmChatDataParts>;

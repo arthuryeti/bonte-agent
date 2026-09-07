@@ -242,11 +242,20 @@ describe("gateway document delivery", () => {
       },
     } as unknown as DeepAgent;
 
-    const gateway = new Gateway(fakeAgent, {
-      platforms: [],
-      resetPolicy: "after_minutes",
-      resetAfterMinutes: 60,
+    const sessions = new SessionStore({
+      databaseUrl: "",
+      databaseHost: "",
+      allowInMemory: true,
     });
+    const gateway = new Gateway(
+      fakeAgent,
+      {
+        platforms: [],
+        resetPolicy: "after_minutes",
+        resetAfterMinutes: 60,
+      },
+      sessions
+    );
     const adapter = new RecordingAdapter();
     (
       gateway as unknown as {
@@ -275,6 +284,13 @@ describe("gateway document delivery", () => {
     assert.equal(adapter.documents.length, 1);
     assert.equal(adapter.documents[0].filePath, pdfPath);
     assert.equal(adapter.documents[0].options?.mimeType, "application/pdf");
+    const assistant = (await sessions.getMessages("telegram", "chat-1")).find(
+      (message) => message.role === "assistant"
+    );
+    assert.equal(assistant?.dataParts?.[0]?.type, "attachment");
+    const attachment = assistant?.dataParts?.[0]?.data;
+    assert.ok(attachment && typeof attachment === "object" && "fileName" in attachment);
+    assert.equal(attachment.fileName, "property-A444.pdf");
   });
 
   it("sends a visible fallback instead of silently dropping an empty agent reply", async () => {

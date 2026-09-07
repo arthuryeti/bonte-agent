@@ -3,6 +3,10 @@ import * as z from "zod";
 import { generatePropertyBrochureCopy } from "../pdf/property-copy.js";
 import { fetchPropertyForPdf } from "../pdf/property-data.js";
 import { renderPropertyPdf } from "../pdf/render-property-pdf.js";
+import { readFile } from "node:fs/promises";
+import { getWorkflowContext } from "../workflows/context.js";
+import { getWorkflowStore } from "../workflows/store.js";
+import { saveGeneratedAttachment, attachmentSummary } from "../workflows/documents-attachments.js";
 
 export const generatePropertyPdfTool = tool(
   async ({
@@ -26,6 +30,9 @@ export const generatePropertyPdfTool = tool(
         maxPhotos,
         copy,
       });
+      const context = getWorkflowContext();
+      const attachment = await saveGeneratedAttachment(context, {fileName:pdf.fileName,mimeType:"application/pdf",bytes:await readFile(pdf.filePath)});
+      await getWorkflowStore().put(context.workspaceId,"generated_file",pdf.fileName,{conversationId:context.conversationId,attachmentId:attachment.id,expiresAt:attachment.expiresAt});
 
       return JSON.stringify({
         success: true,
@@ -34,6 +41,8 @@ export const generatePropertyPdfTool = tool(
         title: property.title,
         fileName: pdf.fileName,
         pageCount: pdf.pageCount,
+        attachmentId: attachment.id,
+        download: attachmentSummary(attachment),
         copy,
         warnings: pdf.warnings,
         mediaTag: `MEDIA:${pdf.filePath}`,
@@ -76,7 +85,7 @@ export const generatePropertyPdfTool = tool(
           .optional()
           .describe("Listing language. Defaults to en."),
         template: z
-          .enum(["standard", "one_page", "luxury"])
+          .enum(["standard", "one_page"])
           .optional()
           .describe("PDF layout template. Defaults to standard."),
         includePrice: z

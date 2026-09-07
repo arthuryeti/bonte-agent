@@ -92,7 +92,8 @@ export class WebAdapter extends BasePlatformAdapter {
     sessionId: string,
     text: string,
     turnId: string = randomUUID(),
-    agentText?: string
+    agentText?: string,
+    attachmentIds?: string[]
   ): Promise<void> {
     if (!this.connected) {
       throw new Error("web gateway is not connected");
@@ -112,6 +113,7 @@ export class WebAdapter extends BasePlatformAdapter {
       senderName: "Web user",
       text,
       agentText,
+      attachmentIds,
       timestamp: new Date(),
       isGroup: false,
     };

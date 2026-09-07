@@ -82,7 +82,9 @@ function asSafeUrl(...values: unknown[]): string | undefined {
 function parseToolOutput(output: unknown): unknown {
   if (
     isRecord(output) &&
-    (Array.isArray(output.Opportunities) || Array.isArray(output.PropertyList))
+    (Array.isArray(output.Opportunities) || Array.isArray(output.PropertyList) ||
+      Array.isArray(output.leads) || Array.isArray(output.matches) ||
+      "ok" in output || "success" in output || "state" in output || "_error" in output)
   ) {
     return output;
   }
@@ -100,11 +102,11 @@ function parseToolOutput(output: unknown): unknown {
   }
 }
 
-/** Returns a handled CRM tool failure that LangChain reports via tool-end. */
+/** Returns a handled workflow failure that LangChain reports via tool-end. */
 export function extractCrmToolError(output: unknown): string | undefined {
   const parsed = parseToolOutput(output);
-  if (!isRecord(parsed) || parsed._error !== true) return undefined;
-  return asString(parsed.message) || "CRM request failed.";
+  if (!isRecord(parsed) || !(parsed._error === true || parsed.ok === false || parsed.success === false || parsed.state === "error")) return undefined;
+  return firstString(parsed.message, parsed.error) || "Tool request failed.";
 }
 
 function serialize(value: unknown): string {
@@ -209,7 +211,7 @@ function normalizeListedProperty(
     ? value.features_list
     : Array.isArray(value.features_list_enum)
       ? value.features_list_enum
-      : [];
+      : Array.isArray(value.features) ? value.features : [];
   const features = rawFeatures
     .map(asString)
     .filter((feature): feature is string => Boolean(feature))
@@ -233,12 +235,12 @@ function normalizeListedProperty(
     bathrooms: asNumber(value.bathrooms),
     price: firstString(value.price, value.Price),
     currency: firstString(value.currency, value.priceprefixhelper),
-    priceVisible: asBoolean(value.price_visible),
+    priceVisible: asBoolean(value.price_visible ?? value.priceVisible),
     sold: asBoolean(value.sold),
-    visibleOnWebsite: asBoolean(value.visibleOnWebsite),
-    livingArea: firstString(value.living_area),
-    totalArea: firstString(value.total_area),
-    plotArea: firstString(value.plot_area),
+    visibleOnWebsite: asBoolean(value.visibleOnWebsite ?? value.published),
+    livingArea: firstString(value.living_area, value.livingArea),
+    totalArea: firstString(value.total_area, value.totalArea),
+    plotArea: firstString(value.plot_area, value.plotArea),
     address: location.address,
     location: location.location,
     description: firstString(preferredLocale?.short, preferredLocale?.description)?.slice(0, 600),
@@ -328,26 +330,26 @@ function normalizeLead(value: unknown, index: number): LeadView | undefined {
 /** Converts a CRM lead-list tool result into the only shape exposed to the web UI. */
 export function normalizeLeadListToolOutput(output: unknown): LeadListView | undefined {
   const parsed = parseToolOutput(output);
-  if (!isRecord(parsed) || !Array.isArray(parsed.Opportunities)) return undefined;
+  if (!isRecord(parsed) || extractCrmToolError(parsed)) return undefined;
+  const sourceLeads = Array.isArray(parsed.Opportunities) ? parsed.Opportunities : Array.isArray(parsed.leads) ? parsed.leads : undefined;
+  if (!sourceLeads) return undefined;
 
-  const opportunities = parsed.Opportunities.slice(0, 100);
+  const opportunities = sourceLeads.slice(0, 100);
   const leads: LeadView[] = [];
   for (const [index, opportunity] of opportunities.entries()) {
     const lead = normalizeLead(opportunity, index);
     if (lead) leads.push(lead);
   }
   const metadata = isRecord(parsed._result) ? parsed._result : {};
-  const totalRecords = asCount(metadata.totalRecords, leads.length);
+  const totalRecords = asCount(parsed.matchedRecords ?? metadata.totalRecords, sourceLeads.length);
 
   return {
     id: `lead-list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     leads,
     totalRecords,
-    returnedRecords: asCount(metadata.returnedRecords, leads.length),
+    returnedRecords: leads.length,
     truncated:
-      typeof metadata.truncated === "boolean"
-        ? metadata.truncated
-        : totalRecords > leads.length,
+      parsed.previewTruncated === true || metadata.truncated === true || totalRecords > leads.length || sourceLeads.length > leads.length,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -357,9 +359,16 @@ export function normalizePropertyListToolOutput(
   output: unknown
 ): PropertyListView | undefined {
   const parsed = parseToolOutput(output);
-  if (!isRecord(parsed) || !Array.isArray(parsed.PropertyList)) return undefined;
+  if (!isRecord(parsed) || extractCrmToolError(parsed)) return undefined;
 
-  const sourceProperties = parsed.PropertyList;
+  const matching = Array.isArray(parsed.matches) && (typeof parsed.exactMatchesInScannedRecords === "number" || typeof parsed.totalMatches === "number");
+  const exactProperty = parsed.ok === true && isRecord(parsed.property) &&
+    asString(parsed.propertyId) === asString(parsed.property.propertyId) && !!asString(parsed.propertyId) &&
+    asString(parsed.reference) === asString(parsed.property.reference) && !!asString(parsed.reference);
+  const sourceProperties = Array.isArray(parsed.PropertyList) ? parsed.PropertyList
+    : matching ? (parsed.matches as unknown[]).filter(isRecord).filter((match) => match.status === "exact").map((match) => match.property)
+      : exactProperty ? [parsed.property] : undefined;
+  if (!sourceProperties) return undefined;
   const properties: PropertyView[] = [];
   for (const [index, propertyValue] of sourceProperties.slice(0, 100).entries()) {
     const property = normalizeListedProperty(propertyValue, index);
@@ -367,7 +376,7 @@ export function normalizePropertyListToolOutput(
   }
   const pagination = isRecord(parsed._pagination) ? parsed._pagination : {};
   const totalRecords = asCount(
-    pagination.totalRecords ?? parsed.Count,
+    matching ? parsed.exactMatchesInScannedRecords ?? parsed.totalMatches : exactProperty ? 1 : pagination.totalRecords ?? parsed.Count,
     sourceProperties.length
   );
 
@@ -378,6 +387,8 @@ export function normalizePropertyListToolOutput(
     returnedRecords: properties.length,
     truncated:
       pagination.truncated === true ||
+      parsed.previewTruncated === true ||
+      (matching && isRecord(parsed.coverage) && parsed.coverage.complete === false) ||
       sourceProperties.length > properties.length ||
       totalRecords > properties.length,
     generatedAt: new Date().toISOString(),

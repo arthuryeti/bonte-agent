@@ -168,8 +168,9 @@ export function extractMediaDelivery(text: string): MediaDelivery {
   };
 }
 
-export function mimeTypeForDocument(filePath: string): string {
-  return mimeTypeForMedia(filePath);
+/** `property-21956-a1b2c3d4.pdf` → `property-21956.pdf` for Content-Disposition. */
+export function attachmentDownloadName(storageName: string): string {
+  return storageName.replace(/-[a-f0-9]{8}(?=\.[a-z0-9]+$)/i, "");
 }
 
 export function mimeTypeForMedia(filePath: string): string {

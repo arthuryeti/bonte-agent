@@ -1,7 +1,4 @@
-import {
-  callCrmApi,
-  type CrmResponse,
-} from "../client/crm-client.js";
+import { resolveExactProperty } from "../workflows/crm-properties.js";
 
 export interface PropertyPdfRequest {
   reference?: string;
@@ -44,6 +41,8 @@ export interface PropertyPdfData {
   categorizedFeatures: Array<{ category: string; values: string[] }>;
   photos: PropertyPhoto[];
   agent?: PropertyAgent;
+  sourceTime?: string;
+  listingUrl?: string;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -212,47 +211,10 @@ function normalizeProperty(
   };
 }
 
-function getPropertyList(response: CrmResponse): Record<string, unknown>[] {
-  if (!isRecord(response.data)) return [];
-
-  return asArray(response.data.PropertyList).filter(isRecord);
-}
-
 export async function fetchPropertyForPdf(
   request: PropertyPdfRequest
 ): Promise<PropertyPdfData> {
-  if (!request.reference && !request.propertyId) {
-    throw new Error("Provide either a property reference or propertyId.");
-  }
-
   const language = request.language ?? "en";
-  const response = await callCrmApi({
-    endpoint: "/api/Property/ListProperties",
-    method: "POST",
-    body: {
-      ...(request.reference ? { Reference: request.reference } : {}),
-      ...(request.propertyId ? { PropertyId: request.propertyId } : {}),
-      PropertyIncludes: {
-        IncludeFeatures: true,
-        IncludeBrokers: true,
-        IncludeAgency: true,
-        UseHtmlDescription: true,
-        IncludeFeaturesByCategory: true,
-      },
-      Lang: language,
-      SequenceNmbr: 1,
-      MaxResponses: 1,
-    },
-  });
-
-  const [property] = getPropertyList(response);
-  if (!property) {
-    throw new Error(
-      `No property found for ${
-        request.reference ? `reference ${request.reference}` : `ID ${request.propertyId}`
-      }.`
-    );
-  }
-
-  return normalizeProperty(property, language);
+  const verified = await resolveExactProperty(request);
+  return { ...normalizeProperty(verified.property, language), sourceTime: verified.sourceTime, listingUrl: verified.listingUrl };
 }

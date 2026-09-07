@@ -1,6 +1,8 @@
 import "dotenv/config";
 import { createCrmAgent } from "./agent.js";
 import { extractLastAssistantText } from "./agent-response.js";
+import { runWithWorkflowContext } from "./workflows/context.js";
+import { initializeWorkflowStore } from "./workflows/store.js";
 
 /**
  * DeepAgent wired to the Proppy CRM API via a subscription-provider layer.
@@ -30,9 +32,10 @@ async function main() {
 
   console.log(`\n👤 User: ${query}\n`);
 
-  const result = await agent.invoke({
+  const store = await initializeWorkflowStore();
+  const result = await runWithWorkflowContext({workspaceId:"cli-local",conversationId:"cli-local",actorId:"cli-local"}, () => agent.invoke({
     messages: [{ role: "user", content: query }],
-  });
+  })).finally(() => store.close());
 
   console.log("\n🤖 Agent response:\n");
   console.log(

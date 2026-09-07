@@ -11,20 +11,21 @@
 import type { DeepAgent } from "deepagents";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import path from "node:path";
+import { runWithWorkflowContext, workflowContextForMessage } from "../workflows/context.js";
 import type { BasePlatformAdapter } from "./platforms/base.js";
 import { TelegramAdapter } from "./platforms/telegram.js";
 import { WhatsAppAdapter } from "./platforms/whatsapp.js";
 import { WebAdapter } from "./platforms/web.js";
 import { SessionStore, type RecentChatSession } from "./session.js";
-import { platformRegistry } from "./registry.js";
 import {
   extractAllMessageText,
   extractContentText,
   extractLastAssistantText,
 } from "../agent-response.js";
 import {
+  attachmentDownloadName,
   extractMediaDelivery,
-  mimeTypeForDocument,
+  mimeTypeForMedia,
 } from "../media-delivery.js";
 import {
   extractCrmToolError,
@@ -121,27 +122,17 @@ class AgentTraceCallback extends BaseCallbackHandler {
     const toolName = this.toolRuns.get(runId);
     if (!toolName) return;
 
+    const toolError = extractCrmToolError(output);
+    if (toolError) {
+      this.handleToolError(new Error(toolError), runId);
+      return;
+    }
+
     if (toolName === "generate_property_pdf") {
       this.documentToolOutputs.push(output);
     }
 
-    if (toolName === "call_crm_api") {
-      const crmError = extractCrmToolError(output);
-      if (crmError) {
-        if (process.env.DEEPAGENT_TOOL_LOGS === "true") {
-          console.warn(`[DeepAgent] tool failed: ${toolName}: ${crmError}`);
-        }
-        if (this.webAdapter && this.chatId) {
-          this.webAdapter.publishToolError(this.chatId, {
-            run_id: runId,
-            tool_name: toolName,
-            message: crmError,
-          });
-        }
-        this.toolRuns.delete(runId);
-        return;
-      }
-
+    if (["call_crm_api", "search_crm_properties", "get_verified_property", "query_crm_leads", "match_crm_properties_to_buyer", "match_saved_buyer"].includes(toolName)) {
       const leadList = normalizeLeadListToolOutput(output);
       if (leadList) {
         this.leadListOutputs.push(leadList);
@@ -279,50 +270,38 @@ class AgentTraceCallback extends BaseCallbackHandler {
   }
 }
 
-// Register built-in adapters
-platformRegistry.register({
-  name: "telegram",
-  label: "Telegram",
-  factory: (cfg) =>
-    new TelegramAdapter({
-      botToken: cfg.botToken as string,
-      allowedUsers: cfg.allowedUsers as string[] | undefined,
-      requireMention: cfg.requireMention as boolean | undefined,
-      typingIndicator: cfg.typingIndicator as boolean | undefined,
-      streamUpdates: cfg.streamUpdates as boolean | undefined,
-    }),
-  requiredEnv: ["TELEGRAM_BOT_TOKEN"],
-});
-
-platformRegistry.register({
-  name: "web",
-  label: "Web",
-  factory: () => new WebAdapter(),
-  requiredEnv: [],
-});
-
-platformRegistry.register({
-  name: "whatsapp",
-  label: "WhatsApp",
-  factory: (cfg) =>
-    new WhatsAppAdapter({
-      authDir: (cfg.authDir as string) || ".whatsapp-auth",
-      allowFrom: cfg.allowFrom as string[] | undefined,
-      allowGroups: cfg.allowGroups as string[] | undefined,
-      requireMention: cfg.requireMention as boolean | undefined,
-      debug: cfg.debug as boolean | undefined,
-      sendTimeoutMs: cfg.sendTimeoutMs as number | undefined,
-      chunkDelayMs: cfg.chunkDelayMs as number | undefined,
-      mode: cfg.mode as "bot" | "self-chat" | undefined,
-      replyPrefix: cfg.replyPrefix as string | undefined,
-      forwardOwnerMessages: cfg.forwardOwnerMessages as boolean | undefined,
-      handoverMinutes: cfg.handoverMinutes as number | undefined,
-      sendReadReceipts: cfg.sendReadReceipts as boolean | undefined,
-      streamUpdates: cfg.streamUpdates as boolean | undefined,
-      maxMessageLength: cfg.maxMessageLength as number | undefined,
-    }),
-  requiredEnv: [], // WhatsApp uses file-based auth, no env key needed
-});
+function createAdapter(pc: PlatformConfig): BasePlatformAdapter | undefined {
+  const extra = pc.extra || {};
+  switch (pc.platform) {
+    case "telegram":
+      return new TelegramAdapter({
+        botToken: extra.botToken as string,
+        allowedUsers: extra.allowedUsers as string[] | undefined,
+        requireMention: extra.requireMention as boolean | undefined,
+        typingIndicator: extra.typingIndicator as boolean | undefined,
+        streamUpdates: extra.streamUpdates as boolean | undefined,
+      });
+    case "web":
+      return new WebAdapter();
+    case "whatsapp":
+      return new WhatsAppAdapter({
+        authDir: (extra.authDir as string) || ".whatsapp-auth",
+        allowFrom: extra.allowFrom as string[] | undefined,
+        allowGroups: extra.allowGroups as string[] | undefined,
+        requireMention: extra.requireMention as boolean | undefined,
+        debug: extra.debug as boolean | undefined,
+        sendTimeoutMs: extra.sendTimeoutMs as number | undefined,
+        chunkDelayMs: extra.chunkDelayMs as number | undefined,
+        mode: extra.mode as "bot" | "self-chat" | undefined,
+        replyPrefix: extra.replyPrefix as string | undefined,
+        forwardOwnerMessages: extra.forwardOwnerMessages as boolean | undefined,
+        handoverMinutes: extra.handoverMinutes as number | undefined,
+        sendReadReceipts: extra.sendReadReceipts as boolean | undefined,
+        streamUpdates: extra.streamUpdates as boolean | undefined,
+        maxMessageLength: extra.maxMessageLength as number | undefined,
+      });
+  }
+}
 
 export class Gateway {
   private adapters = new Map<string, BasePlatformAdapter>();
@@ -353,24 +332,20 @@ export class Gateway {
     console.log("[Gateway] starting...");
     await this.sessions.connect();
 
-    // Initialize adapters for enabled platforms
     for (const pc of this.config.platforms) {
-      if (!pc.enabled) continue;
-
-      const entry = platformRegistry.get(pc.platform);
-      if (!entry) {
+      const adapter = createAdapter(pc);
+      if (!adapter) {
         console.warn(`[Gateway] unknown platform: ${pc.platform}`);
         continue;
       }
 
       try {
-        const adapter = entry.factory(pc.extra || {});
         adapter.onMessage((event) => this.handleMessage(event));
         await adapter.connect();
         this.adapters.set(pc.platform, adapter);
-        console.log(`[Gateway] ${entry.label} connected`);
+        console.log(`[Gateway] ${pc.platform} connected`);
       } catch (err) {
-        console.error(`[Gateway] failed to start ${entry.label}:`, err);
+        console.error(`[Gateway] failed to start ${pc.platform}:`, err);
       }
     }
 
@@ -414,8 +389,12 @@ export class Gateway {
   }
 
   private async handleMessage(event: MessageEvent): Promise<void> {
+    return runWithWorkflowContext(workflowContextForMessage(event), () => this.handleScopedMessage(event));
+  }
+
+  private async handleScopedMessage(event: MessageEvent): Promise<void> {
     console.log(
-      `[Gateway] ${event.platform}:${event.chatId} <${event.senderName}>: ${event.text.slice(0, 80)}`
+      `[Gateway] ${event.platform}:${event.chatId} received message (${event.text.length} characters)`
     );
 
     const adapter = this.adapters.get(event.platform);
@@ -590,6 +569,18 @@ export class Gateway {
             id: data.id,
             data,
           })),
+          ...delivery.documents.map((filePath) => {
+            const fileName = path.basename(filePath);
+            return {
+              type: "attachment" as const,
+              id: fileName,
+              data: {
+                fileName,
+                downloadName: attachmentDownloadName(fileName),
+                mimeType: mimeTypeForMedia(filePath),
+              },
+            };
+          }),
         ]
       );
       assistantPersisted = true;
@@ -613,7 +604,7 @@ export class Gateway {
           await adapter.sendDocument(event.chatId, documentPath, {
             replyTo: event.id,
             fileName: path.basename(documentPath),
-            mimeType: mimeTypeForDocument(documentPath),
+            mimeType: mimeTypeForMedia(documentPath),
           });
         }
 
@@ -1053,6 +1044,10 @@ export class Gateway {
     }));
   }
 
+  async findLegacyBrochureAttachment(workspaceId: string, fileName: string) {
+    return this.sessions.findLegacyBrochureAttachment(workspaceId, fileName);
+  }
+
   async hasSessionMessage(
     platform: Platform,
     chatId: string,
@@ -1065,7 +1060,7 @@ export class Gateway {
     platform: Platform,
     chatId: string
   ): Promise<RecentChatSession> {
-    const session = await this.sessions.ensureSession(platform, chatId);
+    const session = await this.sessions.getSession(platform, chatId);
     return {
       id: session.chatId,
       title: session.title,

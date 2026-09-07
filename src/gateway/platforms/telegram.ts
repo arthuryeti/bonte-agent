@@ -268,9 +268,8 @@ export class TelegramAdapter extends BasePlatformAdapter {
 
   private toTelegramParseMode(
     parseMode?: SendOptions["parseMode"]
-  ): "MarkdownV2" | "HTML" | undefined {
+  ): "MarkdownV2" | undefined {
     if (parseMode === "markdown") return "MarkdownV2";
-    if (parseMode === "html") return "HTML";
     return undefined;
   }
 

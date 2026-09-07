@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import PDFDocument from "pdfkit";
@@ -6,7 +7,7 @@ import type { PropertyBrochureCopy } from "./property-copy.js";
 import type { PropertyPdfData, PropertyPhoto } from "./property-data.js";
 
 export interface PropertyPdfRenderOptions {
-  template?: "standard" | "one_page" | "luxury";
+  template?: "standard" | "one_page";
   includePrice?: boolean;
   maxPhotos?: number;
   outputDir?: string;
@@ -16,6 +17,7 @@ export interface PropertyPdfRenderOptions {
 export interface PropertyPdfRenderResult {
   filePath: string;
   fileName: string;
+  downloadName: string;
   pageCount: number;
   warnings: string[];
 }
@@ -801,7 +803,8 @@ export async function renderPropertyPdf(
   const outputDir = path.resolve(options.outputDir ?? "output/pdf");
   fs.mkdirSync(outputDir, { recursive: true });
 
-  const fileName = `property-${sanitizeFilePart(property.reference)}.pdf`;
+  const downloadName = `property-${sanitizeFilePart(property.reference)}.pdf`;
+  const fileName = `property-${sanitizeFilePart(property.reference)}-${randomBytes(4).toString("hex")}.pdf`;
   const filePath = path.join(outputDir, fileName);
   const images = await loadImages(property.photos, maxPhotos, warnings);
 
@@ -848,6 +851,7 @@ export async function renderPropertyPdf(
   return {
     filePath,
     fileName,
+    downloadName,
     pageCount: range.count,
     warnings,
   };

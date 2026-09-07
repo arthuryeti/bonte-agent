@@ -32,7 +32,30 @@ export interface CrmPaginatedResponse extends CrmResponse {
     totalPages?: number;
     totalRecords?: number;
     truncated: boolean;
+    warnings?: string[];
+    hasMore?: boolean;
+    nextPage?: number;
   };
+}
+
+export class CrmApiError extends Error {
+  constructor(message: string, public readonly status?: number, public readonly kind: "http" | "application" | "contract" = "application") {
+    super(message);
+    this.name = "CrmApiError";
+  }
+}
+
+/** Casafari can report failed requests in an HTTP 200 envelope. */
+export function assertCrmApplicationSuccess(data: unknown): void {
+  if (!isRecord(data)) throw new CrmApiError("CRM returned an invalid response; expected a JSON object.", undefined, "contract");
+  const errors = Array.isArray(data.Errors) ? data.Errors : data.Errors ? [data.Errors] : [];
+  const warnings = Array.isArray(data.Warnings) ? data.Warnings : [];
+  if (errors.length || data.Success === false || ("Success" in data && data.Success == null) || (warnings.length && !data.Success)) {
+    const messages = [...errors, ...warnings].map((entry) => isRecord(entry)
+      ? [entry.Code, entry.ShortText ?? entry.Message].filter((v) => v != null).join(": ")
+      : String(entry));
+    throw new CrmApiError(`CRM request rejected${messages.length ? `: ${messages.join("; ").slice(0, 1000)}` : ": no success confirmation"}`);
+  }
 }
 
 const DEFAULT_BASE_URL = "https://crmapi.casafaricrm.com";
@@ -258,6 +281,9 @@ function withPagination(
 
 export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
   const url = new URL(request.endpoint, getBaseUrl());
+  if (url.origin !== new URL(getBaseUrl()).origin) {
+    throw new CrmApiError("CRM endpoint must use the configured CRM origin.", undefined, "contract");
+  }
 
   if (request.queryParams) {
     for (const [key, value] of Object.entries(request.queryParams)) {
@@ -296,10 +322,12 @@ export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
 
   if (!response.ok) {
     const detail = describeErrorResponse(data);
-    throw new Error(
-      `CRM API error: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`
+    throw new CrmApiError(
+      `CRM API error: ${response.status} ${response.statusText}${detail ? ` - ${detail}` : ""}`, response.status, "http"
     );
   }
+
+  assertCrmApplicationSuccess(data);
 
   return { status: response.status, data };
 }
@@ -328,6 +356,10 @@ export async function callCrmApiWithPagination(
   let totalRecords: number | undefined;
   let truncated = false;
   const allItems: unknown[] = [];
+  const pageFingerprints = new Set<string>();
+  const paginationWarnings: string[] = [];
+  const responseWarnings: unknown[] = [];
+  let reachedEnd = false;
 
   for (let i = 0; i < maxPages; i += 1) {
     const response = await callCrmApi({
@@ -337,6 +369,9 @@ export async function callCrmApiWithPagination(
 
     status = response.status;
     const data = response.data;
+    if (!isRecord(data) || !Array.isArray(data[config.itemKey])) {
+      throw new CrmApiError(`CRM response is missing ${config.itemKey}; data coverage cannot be established.`, undefined, "contract");
+    }
     const items = getItems(data, config.itemKey);
 
     if (!baseData && isRecord(data)) {
@@ -344,6 +379,14 @@ export async function callCrmApiWithPagination(
     }
 
     pagesFetched += 1;
+    if (Array.isArray(data.Warnings)) responseWarnings.push(...data.Warnings);
+    const fingerprint = JSON.stringify(items);
+    if (items.length && pageFingerprints.has(fingerprint)) {
+      truncated = true;
+      paginationWarnings.push("CRM repeated a page; stopped to avoid duplicate records.");
+      break;
+    }
+    pageFingerprints.add(fingerprint);
     allItems.push(...items);
 
     totalPages = getTotalPages(data, config) ?? totalPages;
@@ -351,6 +394,7 @@ export async function callCrmApiWithPagination(
 
     if (totalPages !== undefined) {
       if (page >= totalPages) {
+        reachedEnd = true;
         break;
       }
 
@@ -359,7 +403,16 @@ export async function callCrmApiWithPagination(
       continue;
     }
 
+    if (totalRecords !== undefined && (startPage - 1) * pageSize + allItems.length >= totalRecords) {
+      reachedEnd = true;
+      break;
+    }
+
     if (items.length < pageSize) {
+      if (totalRecords !== undefined && allItems.length < totalRecords) {
+        truncated = true;
+        paginationWarnings.push("CRM ended the result before its reported total was reached.");
+      } else reachedEnd = true;
       break;
     }
 
@@ -381,10 +434,12 @@ export async function callCrmApiWithPagination(
   ) {
     truncated = true;
   }
+  if (startPage > 1) truncated = true;
 
   const data = {
     ...(baseData ?? {}),
     [config.itemKey]: allItems,
+    ...(responseWarnings.length ? { Warnings: responseWarnings } : {}),
     _pagination: {
       autoPaginated: true,
       itemKey: config.itemKey,
@@ -395,6 +450,9 @@ export async function callCrmApiWithPagination(
       totalPages,
       totalRecords,
       truncated,
+      hasMore: !reachedEnd,
+      nextPage: !reachedEnd && !paginationWarnings.length ? startPage + pagesFetched : undefined,
+      ...(paginationWarnings.length ? { warnings: paginationWarnings } : {}),
     },
   };
 

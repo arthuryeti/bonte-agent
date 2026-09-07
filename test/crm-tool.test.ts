@@ -298,6 +298,19 @@ describe("CRM lead browser normalization", () => {
       })),
       "CRM API error: 403 Forbidden"
     );
+    for (const failure of [{ ok: false, error: "Unavailable" }, { state: "error", message: "Unavailable" }, { success: false, message: "Unavailable" }]) {
+      assert.equal(extractCrmToolError(failure), "Unavailable");
+      assert.equal(extractCrmToolError({ content: [{ type: "text", text: JSON.stringify(failure) }] }), "Unavailable");
+      assert.equal(normalizeLeadListToolOutput({ ...failure, leads: [{ Id: "stale" }] }), undefined);
+    }
+  });
+
+  it("uses locally matched lead totals and bounds cards to actual normalized records", () => {
+    const result = normalizeLeadListToolOutput({ ok: true, leads: [{ Id: "lead-1", Customer: { Name: "Buyer" } }], matchedRecords: 12, returnedRecords: 1, previewTruncated: true, coverage: { fetchedRecords: 6546 } });
+    assert.equal(result?.leads[0].id, "lead-1");
+    assert.equal(result?.totalRecords, 12);
+    assert.equal(result?.returnedRecords, 1);
+    assert.equal(result?.truncated, true);
   });
 
   it("exposes a compact, safe component payload", () => {
@@ -365,6 +378,24 @@ describe("CRM lead browser normalization", () => {
 });
 
 describe("CRM property browser normalization", () => {
+  it("renders only exact workflow matches using verified match counts and summary fields", () => {
+    const property = { propertyId: 42, reference: "A-42", type: "Villa", priceVisible: false, livingArea: 120, totalArea: 180, plotArea: 300, features: ["Pool"], published: true };
+    const data = { matches: [{ status: "exact", property }], unverified: [{ status: "unverified", property: { ...property, propertyId: 43 } }], coverage: { complete: false, totalRecords: 900 }, exactMatchesInScannedRecords: 1 };
+    const result = normalizePropertyListToolOutput({ ok: true, ...data });
+    assert.equal(result?.properties.length, 1);
+    assert.equal(result?.totalRecords, 1, "Server candidate totals are not verified-match totals");
+    assert.equal(result?.truncated, true);
+    assert.equal(result?.properties[0].priceVisible, false);
+    assert.equal(result?.properties[0].livingArea, "120");
+    assert.equal(result?.properties[0].visibleOnWebsite, true);
+    assert.deepEqual(result?.properties[0].features, ["Pool"]);
+    assert.equal(normalizePropertyListToolOutput({ briefId: "buyer-1", matches: data.matches, unverified: data.unverified, totalMatches: 5, coverage: { complete: true } })?.totalRecords, 5);
+    assert.equal(normalizePropertyListToolOutput({ ok: true, property, propertyId: 42, reference: "A-42" })?.properties[0].reference, "A-42");
+    assert.equal(normalizePropertyListToolOutput({ ok: true, property, propertyId: 43, reference: "A-42" }), undefined);
+    assert.equal(normalizePropertyListToolOutput({ ok: true, matches: [{ status: "unverified", property }], exactMatchesInScannedRecords: 0 })?.properties.length, 0);
+    assert.equal(normalizePropertyListToolOutput({ ok: false, error: "Failed", ...data }), undefined);
+  });
+
   it("exposes compact property cards with safe detail fields", () => {
     const result = normalizePropertyListToolOutput(JSON.stringify({
       PropertyList: [

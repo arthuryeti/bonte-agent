@@ -1,4 +1,4 @@
-import { createModel } from "../providers/factory.js";
+import { createLanguageModel } from "../providers/factory.js";
 import type { PropertyPdfData } from "./property-data.js";
 
 export interface PropertyBrochureCopy {
@@ -86,7 +86,7 @@ export async function generatePropertyBrochureCopy(
   property: PropertyPdfData,
   language = "en"
 ): Promise<PropertyBrochureCopy> {
-  const model = createModel() as {
+  const model = createLanguageModel() as {
     invoke(input: unknown): Promise<unknown>;
   };
 

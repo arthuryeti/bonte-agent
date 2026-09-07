@@ -4,8 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import {
+  attachmentDownloadName,
   extractMediaDelivery,
-  mimeTypeForDocument,
+  mimeTypeForMedia,
 } from "../src/media-delivery.js";
 
 let tempDir = "";
@@ -57,7 +58,14 @@ describe("media delivery", () => {
   });
 
   it("returns the PDF MIME type", () => {
-    assert.equal(mimeTypeForDocument(pdfPath), "application/pdf");
+    assert.equal(mimeTypeForMedia(pdfPath), "application/pdf");
+  });
+
+  it("strips the unique suffix from PDF download names", () => {
+    assert.equal(
+      attachmentDownloadName("property-21956-a1b2c3d4.pdf"),
+      "property-21956.pdf"
+    );
   });
 
   it("classifies images and voice notes for native delivery", () => {

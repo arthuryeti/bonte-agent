@@ -27,12 +27,8 @@ export interface ProviderRuntimeOverrides {
 export interface ProviderConfig {
   /** Unique provider key, e.g. "openrouter", "openai", "anthropic" */
   name: string;
-  /** Human-readable name */
-  displayName: string;
   /** How we talk to the provider */
   transport: TransportType;
-  /** True if this provider proxies many underlying models (OpenRouter, Together, etc.) */
-  isAggregator: boolean;
   /** Default base URL. Can be overridden via env var. */
   baseUrl: string;
   /** Env var that holds the API key */

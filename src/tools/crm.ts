@@ -416,6 +416,8 @@ export const callCrmApiTool = tool(
     resultSortDirection,
     resultDetail,
   }) => {
+    const allowedReadEndpoints = new Set(["/api/Agency/GetAgencies", "/api/Entity/GetAgents", "/api/Entity/GetOwnerlinks", "/api/Leads/List", "/api/Property/ListProperties", "/api/Property/Location", "/api/Property/InnerLocations", "/api/CodeTable"]);
+    if (!allowedReadEndpoints.has(endpoint)) return JSON.stringify({_error:true,message:"Use the dedicated workflow tool for this action. This compatibility tool only supports documented read endpoints."});
     const shouldAutoPaginate = resolveAutoPagination(endpoint, autoPaginate);
     let requestBody = mergeFiltersIntoBody(endpoint, body, filters);
     if (endpoint === PROPERTY_LIST_ENDPOINT && !shouldAutoPaginate) {
@@ -474,31 +476,11 @@ export const callCrmApiTool = tool(
   {
     name: "call_crm_api",
     description:
-      "Call the Proppy CRM API. " +
-      "Use this tool to interact with the CRM (agencies, entities, leads, properties, code tables). " +
-      "Available endpoints:\n" +
-      "- POST /api/Agency/GetAgencies – list agencies\n" +
-      "- POST /api/CasafariGo/GetUrl – get CasafariGo URL\n" +
-      "- POST /api/CasafariGo/CreateUser – create CasafariGo user\n" +
-      "- POST /api/CasafariGo/DeleteUser – delete CasafariGo user\n" +
-      "- GET  /api/CodeTable – retrieve code tables (business types, property types, zones, languages)\n" +
-      "- POST /api/Entity/GetAgents – list agents/entities\n" +
-      "- POST /api/Entity/GetOwnerlinks – get owner links\n" +
-      "- POST /api/Leads/Insert – create a new lead\n" +
-      "- POST /api/Leads/List – list leads (sales/listings)\n" +
-      "- POST /api/Property/SendProperty – insert or update a property\n" +
-      "- POST /api/Property/DeleteProperty – delete a property\n" +
-      "- POST /api/Property/ListProperties – search/list properties\n" +
-      "- POST /api/Property/Location – get locations\n" +
-      "- POST /api/Property/InnerLocations – get inner locations\n" +
-      "- POST /api/Property/Hit – record a property visit/hit\n" +
-      "For POST requests, provide the exact request body as a JSON object in 'body'. " +
-      "Use 'filters' for end-user search criteria; it is merged into the correct filter object for agencies and agents, and into the top-level body for leads, properties, and other endpoints. " +
-      "Agency and entity list endpoints are automatically fetched across all pages by default. Property searches default to one compact page of 20 records while preserving Count as totalRecords; set autoPaginate=true only for an explicitly requested complete result. " +
-      "For properties, filters include Reference, PropertyIds, BusinessTypeIds, PropertyTypeIds, Locations, PriceFrom, PriceTo, MinBedrooms, MaxBedrooms, Active, VisibleOnWebsite, Sold, AgentId, AgencyId, FreeText, and related FilterRq fields. For a named city such as Lisbon, use FreeText. For exactly two bedrooms, set both MinBedrooms and MaxBedrooms to 2. " +
-      "For leads, filters include StartDate, EndDate, Category, OriginId, and Language; the API spec does not expose pagination for /api/Leads/List. " +
-      "Lead-list results are sorted by CreateDate descending, limited to 20 records, and compacted to useful summary fields by default because the API returns its entire history with large nested event data. Use resultLimit (maximum 100) to request a different bounded count, resultSortBy to sort by CreateDate or LastUpdate, resultSortDirection for newest/oldest ordering, and resultDetail=full only when the user explicitly needs complete nested lead details. The _result metadata reports the full matching count and whether records were truncated. " +
-      "For GET requests, provide query parameters in 'queryParams'.",
+      "Read-only compatibility access to documented Casafari CRM endpoints. Prefer dedicated workflow tools for leads and properties: those validate criteria and compute totals before previews. " +
+      "Allowed endpoints: POST /api/Agency/GetAgencies, POST /api/Entity/GetAgents, POST /api/Entity/GetOwnerlinks, POST /api/Leads/List, POST /api/Property/ListProperties, POST /api/Property/Location, POST /api/Property/InnerLocations, GET /api/CodeTable. " +
+      "GetOwnerlinks returns property/owner IDs and links, not owner contact information. CodeTable documents business types, property types and zones, not lead source/status IDs. " +
+      "Provide the documented request body; filters merge into AgencySearchFilters or EntitySearchFilters, otherwise top-level. General contacts and external market inventory are unavailable. " +
+      "Legacy lead/property results default to a compact 20-record preview. They are unsuitable for audits or matching; use workflow tools. Writes and undocumented endpoints are rejected.",
     schema: z.object({
       endpoint: z
         .string()

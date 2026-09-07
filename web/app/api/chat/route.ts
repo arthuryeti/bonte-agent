@@ -4,6 +4,7 @@ import {
 } from "ai";
 import { GatewayRpcClient, type GatewayEvent } from "./gateway-client";
 import type {
+  AttachmentView,
   CrmChatMessage,
   LeadListView,
   PropertyListView,
@@ -34,6 +35,7 @@ interface ChatRequestBody {
   sessionId?: string;
   messages?: CrmChatMessage[];
   action?: unknown;
+  attachmentIds?: string[];
 }
 
 interface AcceptedTurn {
@@ -96,6 +98,58 @@ function propertyListPart(part: GatewayHistoryDataPart) {
   };
 }
 
+function attachmentPart(part: GatewayHistoryDataPart) {
+  if (part.type !== "attachment" || !part.id || !isRecord(part.data)) {
+    return undefined;
+  }
+  const fileName = typeof part.data.fileName === "string" ? part.data.fileName : "";
+  if (!fileName) return undefined;
+  const downloadName =
+    typeof part.data.downloadName === "string"
+      ? part.data.downloadName
+      : fileName.replace(/-[a-f0-9]{8}(?=\.[a-z0-9]+$)/i, "");
+  return {
+    type: "data-attachment" as const,
+    id: part.id,
+    data: {
+      fileName,
+      downloadName,
+      mimeType: typeof part.data.mimeType === "string" ? part.data.mimeType : undefined,
+    } satisfies AttachmentView,
+  };
+}
+
+function historyDataParts(parts: GatewayHistoryDataPart[] | undefined, content: string) {
+  return selectRelevantDataParts(parts, content)
+    .map((part) => leadListPart(part) ?? propertyListPart(part))
+    .filter((part): part is NonNullable<typeof part> => Boolean(part));
+}
+
+function attachmentMarkdown(
+  parts: GatewayHistoryDataPart[] | undefined,
+  extraNames: string[] = [],
+): string {
+  const files = new Map<string, string>();
+  for (const part of parts ?? []) {
+    const attachment = attachmentPart(part);
+    if (attachment) {
+      files.set(attachment.data.fileName, attachment.data.downloadName ?? attachment.data.fileName);
+    }
+  }
+  for (const name of extraNames) {
+    if (!files.has(name)) {
+      files.set(name, name.replace(/-[a-f0-9]{8}(?=\.[a-z0-9]+$)/i, ""));
+    }
+  }
+  return [...files]
+    .map(
+      ([fileName, downloadName]) =>
+        `[Download ${downloadName}](/api/files?name=${encodeURIComponent(fileName)})`,
+    )
+    .join("\n\n");
+}
+
+
 class GatewayTurnTimeoutError extends Error {}
 class GatewayTurnAbortedError extends Error {}
 
@@ -146,22 +200,14 @@ export async function GET(request: Request) {
     return Response.json({
       messages: history.messages
         .filter((message) => message.role === "user" || message.role === "assistant")
-        .map((message, index): CrmChatMessage => {
-          const dataParts = selectRelevantDataParts(
-            message.data_parts,
-            message.content,
-          )
-            .map((part) => leadListPart(part) ?? propertyListPart(part))
-            .filter((part): part is NonNullable<typeof part> => Boolean(part));
-          return {
-            id: message.platform_message_id || `${sessionId}-${index}`,
-            role: message.role,
-            parts: [
-              { type: "text" as const, text: message.content },
-              ...dataParts,
-            ],
-          };
-        }),
+        .map((message, index): CrmChatMessage => ({
+          id: message.platform_message_id || `${sessionId}-${index}`,
+          role: message.role,
+          parts: [
+            { type: "text" as const, text: [message.content, attachmentMarkdown(message.data_parts)].filter(Boolean).join("\n\n") },
+            ...historyDataParts(message.data_parts, message.content),
+          ],
+        })),
     });
   } catch {
     return Response.json({ messages: [] });
@@ -216,7 +262,7 @@ export async function POST(request: Request) {
       let stopRequest: Promise<unknown> | undefined;
       let hasContent = false;
       const pendingEvents: GatewayEvent[] = [];
-      const attachmentNames = new Set<string>();
+      const attachmentNames: string[] = [];
       const turnComplete = new Promise<void>((resolve, reject) => {
         completeTurn = resolve;
         failTurn = reject;
@@ -243,7 +289,10 @@ export async function POST(request: Request) {
         if (temporaryStatus) writer.write(temporaryStatus);
 
         if (event.type === "attachment.available") {
-          attachmentNames.add(payloadString(event, "file_name") || "document");
+          const fileName = payloadString(event, "file_name");
+          if (fileName && !attachmentNames.includes(fileName)) {
+            attachmentNames.push(fileName);
+          }
         } else if (event.type === "turn.error") {
           failTurn?.(new Error(payloadString(event, "message") || "gateway turn failed"));
         } else if (event.type === "turn.complete") {
@@ -299,6 +348,7 @@ export async function POST(request: Request) {
                 request_id: requestId,
                 text,
                 compact_crm_results: true,
+                attachment_ids: body.attachmentIds,
               },
               request.signal,
             );
@@ -330,25 +380,21 @@ export async function POST(request: Request) {
         }
 
         writer.write(completedWorkingStatusPart(workingPartId));
-        const attachmentText = [...attachmentNames]
-          .map((fileName) => `File ready: ${fileName}`)
-          .join("\n\n");
-        const finalText = [persisted.content, attachmentText]
-          .filter(Boolean)
-          .join("\n\n");
+        const finalText = [
+          persisted.content,
+          attachmentMarkdown(persisted.data_parts, attachmentNames),
+        ].filter(Boolean).join("\n\n");
         if (finalText) {
           startText();
           hasContent = true;
           writer.write({ type: "text-delta", id: partId, delta: finalText });
         }
-        for (const dataPart of selectRelevantDataParts(
+        for (const dataPart of historyDataParts(
           persisted.data_parts,
           persisted.content,
         )) {
-          const part = leadListPart(dataPart) ?? propertyListPart(dataPart);
-          if (!part) continue;
           hasContent = true;
-          writer.write(part);
+          writer.write(dataPart);
         }
 
         if (!hasContent) throw new Error("The agent returned an empty response.");
