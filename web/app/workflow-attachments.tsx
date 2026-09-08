@@ -93,8 +93,14 @@ export function WorkflowAttachments({ sessionId, disabled, onChange, onBusyChang
   const locked = busy || loading || disabled;
   const overLimit = files.filter((file) => !file.generated).length > 12;
   return <div className="workflow-attachments">
+    <details className="attachment-menu">
+      <summary>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m21 11-8.5 8.5a6 6 0 0 1-8.5-8.5l9-9a4 4 0 0 1 5.7 5.7l-9 9a2 2 0 0 1-2.8-2.8l8.5-8.5" /></svg>
+        {files.length ? `Documents (${files.length})` : "Attach files"}
+      </summary>
+      <div className="attachment-menu-content">
     <div className="workflow-attachments-bar">
-      <strong>Documents{files.length ? ` (${files.length})` : ""}</strong>
+      <strong>Supporting documents</strong>
       <label>Type{" "}<select aria-label="Document type" value={category} disabled={locked} onChange={(event) => setCategory(event.target.value)}>
         <option value="party">Party identification</option><option value="transaction">Transaction</option><option value="other">Other document</option>
       </select></label>
@@ -102,14 +108,16 @@ export function WorkflowAttachments({ sessionId, disabled, onChange, onBusyChang
         onChange={(event) => { const selected = Array.from(event.target.files || []); event.target.value = ""; if (selected.length) void uploadAll(selected); }} />
     </div>
     <p>PDF, DOCX, JPEG, PNG or WebP, up to 15 MB each. NDA/CMI: passport photos and client/agent IDs as Party identification; property and deal documents as Transaction.</p>
-    {progress ? <p role="status">{progress}</p> : busy ? <p role="status">Processing document…</p> : loading ? <p role="status">Loading documents…</p> : null}
-    {error ? <p role="alert">{error}</p> : null}
-    {overLimit ? <p role="status">Only the first 12 supporting documents are included with the next message. Remove one to include another.</p> : null}
     {files.length ? <ul className="workflow-attachments-list">{files.map((file) => <li key={file.id}>
       <a href={file.downloadUrl}>{file.fileName}</a>{" "}<span>· {file.category} · expires {new Date(file.expiresAt).toLocaleDateString()}</span>{" "}
       <button type="button" disabled={locked} onClick={() => void remove(file.id)} aria-label={`Delete ${file.fileName}`}>Delete</button>
       {!file.generated && !file.readable && !file.warnings.length ? <div role="status">This document could not be read.</div> : null}
       {file.warnings.length ? <div>{file.warnings.join(" ")}</div> : null}
     </li>)}</ul> : null}
+      </div>
+    </details>
+    {progress ? <p role="status">{progress}</p> : busy ? <p role="status">Processing document…</p> : loading ? <p role="status">Loading documents…</p> : null}
+    {error ? <p role="alert">{error}</p> : null}
+    {overLimit ? <p role="status">Only the first 12 supporting documents are included with the next message. Remove one to include another.</p> : null}
   </div>;
 }

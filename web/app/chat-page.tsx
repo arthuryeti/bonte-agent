@@ -35,10 +35,10 @@ const MarkdownMessage = dynamic(
 );
 
 const suggestions = [
-  "Show me the latest leads",
-  "Find available properties",
-  "Market research: estimate a property's sale price",
-  "Which broker follow-ups are overdue?",
+  { title: "Explore leads", description: "Catch up on your latest enquiries", prompt: "Show me the latest leads" },
+  { title: "Find a property", description: "Discover what’s available", prompt: "Find available properties" },
+  { title: "Research the market", description: "Get a property price estimate", prompt: "Market research: estimate a property's sale price" },
+  { title: "Plan follow-ups", description: "See who needs your attention", prompt: "Which broker follow-ups are overdue?" },
 ];
 
 const SESSION_STORAGE_KEY = "crm-assistant-session";
@@ -384,8 +384,8 @@ export default function ChatPage({ user }: ChatPageProps) {
             <div className="sidebar-brand">
               <span className="mark" aria-hidden="true">B</span>
               <div>
-                <p className="title">CRM Assistant</p>
-                <p>Bonte workspace</p>
+                <p className="title">bonte</p>
+                <p>Your workspace</p>
               </div>
             </div>
             <button
@@ -403,13 +403,13 @@ export default function ChatPage({ user }: ChatPageProps) {
             disabled={!hasLoadedWorkspace || isCreatingChat}
           >
             <span aria-hidden="true">＋</span>
-            New conversation
+            New chat
           </button>
 
           <div className="chat-history">
+            {hasLoadedWorkspace ? <WorkflowPanel refreshKey={`${sessionId}:${status}`} /> : null}
             <div className="chat-history-heading">
-              <p>Recent</p>
-              <span>{recentChats.length}</span>
+              <p>Recent conversations</p>
             </div>
             <nav className="chat-history-list" aria-label="Conversation history">
               {recentChats.map((chat) => (
@@ -420,7 +420,6 @@ export default function ChatPage({ user }: ChatPageProps) {
                   onClick={() => selectChat(chat.id)}
                   aria-current={chat.id === sessionId ? "page" : undefined}
                 >
-                  <span className="chat-item-icon" aria-hidden="true" />
                   <span className="chat-item-copy">
                     <strong>{chat.title}</strong>
                     <small>{formatRecentTime(chat.updatedAt)}</small>
@@ -445,12 +444,12 @@ export default function ChatPage({ user }: ChatPageProps) {
               aria-label="Sign out"
               title="Sign out"
             >
-              {isSigningOut ? "…" : "↗"}
+              {isSigningOut ? "…" : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>}
             </button>
           </footer>
         </aside>
 
-        <section className="chat-panel" aria-label="CRM assistant chat">
+        <section className={`chat-panel${messages.length === 0 && !isWorking ? " empty" : ""}`} aria-label="CRM assistant chat">
           <header className="topbar">
             <div className="topbar-chat">
               <button
@@ -463,24 +462,13 @@ export default function ChatPage({ user }: ChatPageProps) {
               >
                 <i /><i /><i />
               </button>
-              <div>
-                <p className="title">{activeChat?.title || DEFAULT_CHAT_TITLE}</p>
-                <p className="status"><span aria-hidden="true" /> {isWorking ? "Working…" : "Ready to help"}</p>
-              </div>
+              <p className="title">{activeChat?.title || DEFAULT_CHAT_TITLE}</p>
             </div>
-            <button
-              className="new-chat"
-              type="button"
-              onClick={createNewChat}
-              disabled={!hasLoadedWorkspace || isCreatingChat}
-            >
-              New chat
-            </button>
+            <span className="status"><span aria-hidden="true" /> {isWorking ? "Working…" : "CRM Assistant"}</span>
           </header>
 
           <div className="conversation" aria-live="polite">
             <div className="conversation-content">
-              {hasLoadedWorkspace ? <WorkflowPanel refreshKey={`${sessionId}:${status}`} /> : null}
               {isLoadingChat || !hasLoadedWorkspace ? (
                 <div className="chat-loading" aria-label="Loading conversation">
                   <i /><i /><i />
@@ -488,16 +476,17 @@ export default function ChatPage({ user }: ChatPageProps) {
               ) : messages.length === 0 && !isWorking ? (
                 <div className="welcome">
                   <div className="welcome-mark" aria-hidden="true">B</div>
-                  <h1>How can I help?</h1>
-                  <p>Ask about your leads, properties, agencies, or follow-ups.</p>
+                  <h1>How can I help you today?</h1>
+                  <p>A little less admin. More time for your clients.</p>
                   <div className="suggestions">
                     {suggestions.map((suggestion) => (
                       <button
-                        key={suggestion}
+                        key={suggestion.title}
                         type="button"
-                        onClick={() => submitMessage(suggestion)}
+                        onClick={() => submitMessage(suggestion.prompt)}
+                        disabled={isUploadingDocuments || isCreatingChat}
                       >
-                        {suggestion}
+                        <span className="suggestion-copy"><strong>{suggestion.title}</strong><small>{suggestion.description}</small></span>
                         <span aria-hidden="true">↗</span>
                       </button>
                     ))}
@@ -536,7 +525,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                         key={message.id}
                       >
                         <div className="message-label">
-                          {message.role === "user" ? "You" : "Assistant"}
+                          {message.role === "user" ? "You" : <><span className="message-mark" aria-hidden="true">B</span> Bonte</>}
                         </div>
                         {hasBubbleContent || showThinkingBubble ? (
                           <div className="bubble">
@@ -612,7 +601,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                   })}
                   {showStandaloneThinking ? (
                     <article className="message assistant thinking" aria-label="Assistant is thinking">
-                      <div className="message-label">Assistant</div>
+                      <div className="message-label"><span className="message-mark" aria-hidden="true">B</span> Bonte</div>
                       <div className="bubble"><i /><i /><i /></div>
                       <ToolStatus data={{ status: "running", label: "Thinking…" }} />
                     </article>
@@ -632,26 +621,28 @@ export default function ChatPage({ user }: ChatPageProps) {
 
           <div className="composer-wrap">
             <div className="composer-inner">
-              {hasLoadedWorkspace ? <WorkflowAttachments key={sessionId} sessionId={sessionId} disabled={isWorking || isLoadingChat || isCreatingChat} onChange={setAttachmentIds} onBusyChange={setIsUploadingDocuments} /> : null}
               <form className="composer" onSubmit={handleSubmit}>
                 <textarea
                   aria-label="Message the CRM assistant"
-                  placeholder="Ask anything about your CRM…"
-                  rows={1}
+                  placeholder="Ask about leads, properties, or your next move…"
+                  rows={2}
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
                   disabled={isWorking || isLoadingChat || isCreatingChat}
                 />
-                {isWorking ? (
-                  <button className="send stop" type="button" onClick={stop} aria-label="Stop response">
-                    <span aria-hidden="true" />
-                  </button>
-                ) : (
-                  <button className="send" type="submit" disabled={(!input.trim() && attachmentIds.length === 0) || !hasLoadedWorkspace || isLoadingChat || isCreatingChat || isUploadingDocuments} aria-label="Send message">
-                    <span aria-hidden="true">↑</span>
-                  </button>
-                )}
+                <div className="composer-toolbar">
+                  {hasLoadedWorkspace ? <WorkflowAttachments key={sessionId} sessionId={sessionId} disabled={isWorking || isLoadingChat || isCreatingChat} onChange={setAttachmentIds} onBusyChange={setIsUploadingDocuments} /> : <span />}
+                  {isWorking ? (
+                    <button className="send stop" type="button" onClick={stop} aria-label="Stop response">
+                      <span aria-hidden="true" />
+                    </button>
+                  ) : (
+                    <button className="send" type="submit" disabled={(!input.trim() && attachmentIds.length === 0) || !hasLoadedWorkspace || isLoadingChat || isCreatingChat || isUploadingDocuments} aria-label="Send message">
+                      <span aria-hidden="true">↑</span>
+                    </button>
+                  )}
+                </div>
               </form>
               <p className="hint">Enter to send · Shift + Enter for a new line</p>
             </div>
