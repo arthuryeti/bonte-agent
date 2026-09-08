@@ -15,7 +15,6 @@ import {
 import type {
   CrmChatMessage,
   LeadView,
-  PropertyView,
   ScheduleFollowUpAction,
 } from "./chat-types";
 import {
@@ -28,6 +27,7 @@ import { PropertyDrawer, PropertyResults } from "./property-results";
 import { authClient } from "../lib/auth-client";
 import { WorkflowAttachments } from "./workflow-attachments";
 import { WorkflowPanel } from "./workflow-panel";
+import { EmailDraft } from "./email-draft";
 
 const MarkdownMessage = dynamic(
   () => import("./markdown-message").then((module) => module.MarkdownMessage),
@@ -37,6 +37,7 @@ const MarkdownMessage = dynamic(
 const suggestions = [
   "Show me the latest leads",
   "Find available properties",
+  "Market research: estimate a property's sale price",
   "Which broker follow-ups are overdue?",
 ];
 
@@ -119,23 +120,6 @@ function formatRecentTime(value: string): string {
   }).format(date);
 }
 
-function propertyFromLead(
-  property: LeadView["properties"][number],
-  index = 0,
-): PropertyView {
-  const id = property.id || property.reference || `related-property-${index + 1}`;
-  const reference = property.reference || property.id || `Property ${index + 1}`;
-  return {
-    id,
-    reference,
-    title: reference,
-    address: property.address,
-    location: property.address,
-    price: property.price,
-    updatedAt: property.updatedAt,
-    features: [],
-  };
-}
 
 export default function ChatPage({ user }: ChatPageProps) {
   const router = useRouter();
@@ -149,8 +133,8 @@ export default function ChatPage({ user }: ChatPageProps) {
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<LeadView>();
-  const [selectedProperty, setSelectedProperty] = useState<PropertyView>();
+  const [selectedLead, setSelectedLead] = useState<string>();
+  const [selectedProperty, setSelectedProperty] = useState<LeadView["properties"][number]>();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { messages, sendMessage, setMessages, status, error, stop, clearError } =
     useChat<CrmChatMessage>();
@@ -250,20 +234,23 @@ export default function ChatPage({ user }: ChatPageProps) {
     text: string,
     action?: ScheduleFollowUpAction
   ) => {
-    const trimmedText = text.trim();
-    if (!trimmedText || isWorking || isUploadingDocuments) return;
+    const trimmedText = text.trim() || (attachmentIds.length ? "Please read the attached documents." : "");
+    if (!trimmedText || isWorking || isUploadingDocuments || isLoadingChat || isCreatingChat || !hasLoadedWorkspace) return;
 
     clearError();
     touchActiveChat(trimmedText);
     void sendMessage(
-      { text: trimmedText },
+      { parts: [
+        { type: "text", text: trimmedText },
+        ...attachmentIds.map((id) => ({ type: "data-source-document" as const, id, data: { attachmentId: id } })),
+      ] },
       { body: { sessionId, attachmentIds, ...(action ? { action } : {}) } }
     );
     setInput("");
-  }, [clearError, isWorking, sendMessage, sessionId, touchActiveChat, attachmentIds, isUploadingDocuments]);
+  }, [clearError, isWorking, sendMessage, sessionId, touchActiveChat, attachmentIds, isUploadingDocuments, isLoadingChat, isCreatingChat, hasLoadedWorkspace]);
 
   const createNewChat = useCallback(async () => {
-    if (messages.length === 0 && activeChat?.title === DEFAULT_CHAT_TITLE) {
+    if (messages.length === 0 && attachmentIds.length === 0 && activeChat?.title === DEFAULT_CHAT_TITLE) {
       setSidebarOpen(false);
       return;
     }
@@ -292,7 +279,7 @@ export default function ChatPage({ user }: ChatPageProps) {
     } finally {
       setIsCreatingChat(false);
     }
-  }, [activeChat?.title, clearError, messages.length, setMessages, stop]);
+  }, [activeChat?.title, attachmentIds.length, clearError, messages.length, setMessages, stop]);
 
   const signOut = useCallback(async () => {
     setIsSigningOut(true);
@@ -328,34 +315,14 @@ export default function ChatPage({ user }: ChatPageProps) {
 
   const selectLead = useCallback((lead: LeadView) => {
     setSelectedProperty(undefined);
-    setSelectedLead(lead);
+    setSelectedLead(lead.id);
   }, []);
 
-  const selectProperty = useCallback((property: PropertyView) => {
+  const selectProperty = useCallback((property: LeadView["properties"][number]) => {
     setSelectedLead(undefined);
-    setSelectedProperty(property);
+    setSelectedProperty({ id: property.id, reference: property.reference });
   }, []);
 
-  const selectRelatedProperty = useCallback((
-    property: LeadView["properties"][number],
-    index: number,
-  ) => {
-    selectProperty(propertyFromLead(property, index));
-  }, [selectProperty]);
-
-  const refreshLead = useCallback((lead: LeadView) => {
-    closeLead();
-    submitMessage(`Fetch the latest full CRM details for lead ID ${lead.id}.`);
-  }, [closeLead, submitMessage]);
-
-  const refreshProperty = useCallback((property: PropertyView) => {
-    closeProperty();
-    const hasDistinctId = property.id && property.id !== property.reference;
-    const identifier = hasDistinctId
-      ? `ID ${property.id}`
-      : `reference ${property.reference}`;
-    submitMessage(`Fetch the latest full CRM details for property ${identifier}.`);
-  }, [closeProperty, submitMessage]);
 
   const scheduleFollowUp = useCallback((
     lead: LeadView,
@@ -553,6 +520,8 @@ export default function ChatPage({ user }: ChatPageProps) {
                         part.type === "data-lead-list" ||
                         part.type === "data-property-list" ||
                         part.type === "data-attachment" ||
+                        part.type === "data-source-document" ||
+                        part.type === "data-email-draft" ||
                         (part.type === "text" && part.text.trim().length > 0)
                     );
                     const showThinkingBubble =
@@ -560,7 +529,7 @@ export default function ChatPage({ user }: ChatPageProps) {
                       isWorking &&
                       messageIndex === messages.length - 1 &&
                       !hasBubbleContent;
-                    const hasRichResult = Boolean(leadListPart || propertyListPart);
+                    const hasRichResult = Boolean(leadListPart || propertyListPart || message.parts.some((part) => part.type === "data-email-draft"));
                     return (
                       <article
                         className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}${showThinkingBubble ? " thinking" : ""}`}
@@ -603,6 +572,17 @@ export default function ChatPage({ user }: ChatPageProps) {
                                     key={part.id || `${message.id}-properties-${index}`}
                                     onSelect={selectProperty}
                                   />
+                                );
+                              }
+                              if (part.type === "data-email-draft") {
+                                return <EmailDraft data={part.data} key={part.id || `${message.id}-draft-${index}`} />;
+                              }
+                              if (part.type === "data-source-document") {
+                                return (
+                                  <a className="pdf-download" href={`/api/attachments?id=${encodeURIComponent(part.data.attachmentId)}`}
+                                    key={part.id || `${message.id}-source-${index}`}>
+                                    Supporting document {index}
+                                  </a>
                                 );
                               }
                               if (part.type === "data-attachment") {
@@ -652,7 +632,7 @@ export default function ChatPage({ user }: ChatPageProps) {
 
           <div className="composer-wrap">
             <div className="composer-inner">
-              {hasLoadedWorkspace ? <WorkflowAttachments key={sessionId} sessionId={sessionId} disabled={isWorking || isLoadingChat} onChange={setAttachmentIds} onBusyChange={setIsUploadingDocuments} /> : null}
+              {hasLoadedWorkspace ? <WorkflowAttachments key={sessionId} sessionId={sessionId} disabled={isWorking || isLoadingChat || isCreatingChat} onChange={setAttachmentIds} onBusyChange={setIsUploadingDocuments} /> : null}
               <form className="composer" onSubmit={handleSubmit}>
                 <textarea
                   aria-label="Message the CRM assistant"
@@ -661,14 +641,14 @@ export default function ChatPage({ user }: ChatPageProps) {
                   value={input}
                   onChange={(event) => setInput(event.target.value)}
                   onKeyDown={handleKeyDown}
-                  disabled={isWorking || isLoadingChat}
+                  disabled={isWorking || isLoadingChat || isCreatingChat}
                 />
                 {isWorking ? (
                   <button className="send stop" type="button" onClick={stop} aria-label="Stop response">
                     <span aria-hidden="true" />
                   </button>
                 ) : (
-                  <button className="send" type="submit" disabled={!input.trim() || isLoadingChat || isUploadingDocuments} aria-label="Send message">
+                  <button className="send" type="submit" disabled={(!input.trim() && attachmentIds.length === 0) || !hasLoadedWorkspace || isLoadingChat || isCreatingChat || isUploadingDocuments} aria-label="Send message">
                     <span aria-hidden="true">↑</span>
                   </button>
                 )}
@@ -681,20 +661,19 @@ export default function ChatPage({ user }: ChatPageProps) {
 
       {selectedLead ? (
         <LeadDrawer
-          lead={selectedLead}
+          key={selectedLead}
+          leadId={selectedLead}
           disabled={isWorking}
           onClose={closeLead}
-          onSelectProperty={selectRelatedProperty}
-          onRefresh={refreshLead}
+          onSelectProperty={selectProperty}
           onSchedule={scheduleFollowUp}
         />
       ) : null}
       {selectedProperty ? (
         <PropertyDrawer
-          property={selectedProperty}
-          disabled={isWorking}
+          key={`${selectedProperty.id || ""}:${selectedProperty.reference || ""}`}
+          identity={selectedProperty}
           onClose={closeProperty}
-          onRefresh={refreshProperty}
         />
       ) : null}
     </main>

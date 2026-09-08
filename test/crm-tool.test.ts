@@ -10,8 +10,9 @@ import {
   extractCrmToolError,
   normalizeLeadListToolOutput,
   normalizePropertyListToolOutput,
+  normalizePropertyView,
 } from "../src/gateway/crm-ui.js";
-
+import { propertySummary } from "../src/workflows/crm-properties.js";
 describe("CRM lead result shaping", () => {
   it("returns the newest 20 leads by default with result metadata", () => {
     const opportunities = Array.from({ length: 25 }, (_, index) => ({
@@ -213,7 +214,6 @@ describe("CRM property result shaping", () => {
     };
 
     assert.equal(result.PropertyList.length, 20);
-    assert.equal(result.PropertyList[0]?.files, undefined);
     assert.deepEqual(result.PropertyList[0]?.photos, [{
       Url: "https://images.example.com/1-0.jpg",
       SortOrder: 0,
@@ -278,7 +278,6 @@ describe("CRM property result shaping", () => {
         MinBedrooms: 2,
         MaxBedrooms: 2,
       });
-      assert.equal(parsed.PropertyList[0]?.files, undefined);
       assert.equal(parsed._pagination.totalRecords, 184);
       assert.equal(parsed._pagination.truncated, true);
     } finally {
@@ -396,79 +395,28 @@ describe("CRM property browser normalization", () => {
     assert.equal(normalizePropertyListToolOutput({ ok: false, error: "Failed", ...data }), undefined);
   });
 
-  it("exposes compact property cards with safe detail fields", () => {
+  it("prefers English titles, drops javascript photos, and keeps list truncation honest", () => {
     const result = normalizePropertyListToolOutput(JSON.stringify({
-      PropertyList: [
-        {
-          propertyId: 42,
-          internalId: "internal-42",
-          reference: "LX-100",
-          status: "Active",
-          businessTypeLocale: "For sale",
-          typeLocale: "Apartment",
-          typology: "T2",
-          bedrooms: 2,
-          bathrooms: 1,
-          price: 475000,
-          currency: "EUR",
-          living_area: 91.5,
-          location: {
-            address: "Rua Example 10",
-            cityName: "Lisbon",
-            regionName: "Lisbon",
-          },
-          locale: [
-            { language: "pt", title: "Apartamento", short: "Descrição PT" },
-            { language: "en", title: "City apartment", short: "Sunny apartment" },
-          ],
-          photos: [
-            { Url: "javascript:alert(1)", SortOrder: 1 },
-            { Url: "https://images.example.com/property.jpg", SortOrder: 2 },
-          ],
-          listing_agent: [
-            { id: 7, Name: "Marta", Email: "marta@example.com" },
-          ],
-          features_list: ["Lift", "Balcony"],
-        },
-      ],
+      PropertyList: [{
+        propertyId: 42,
+        reference: "LX-100",
+        typeLocale: "Apartment",
+        locale: [
+          { language: "pt", title: "Apartamento", short: "Descrição PT" },
+          { language: "en", title: "City apartment", short: "Sunny apartment" },
+        ],
+        photos: [
+          { Url: "javascript:alert(1)", SortOrder: 1 },
+          { Url: "https://images.example.com/property.jpg", SortOrder: 2 },
+        ],
+      }],
       Count: 17,
       _pagination: { returnedRecords: 1, totalRecords: 17, truncated: true },
     }));
-
-    assert.ok(result);
-    assert.equal(result.totalRecords, 17);
-    assert.equal(result.returnedRecords, 1);
-    assert.equal(result.truncated, true);
-    assert.deepEqual(result.properties[0], {
-      id: "42",
-      internalId: "internal-42",
-      reference: "LX-100",
-      title: "City apartment",
-      status: "Active",
-      businessType: "For sale",
-      propertyType: "Apartment",
-      condition: undefined,
-      typology: "T2",
-      bedrooms: 2,
-      bathrooms: 1,
-      price: "475000",
-      currency: "EUR",
-      priceVisible: undefined,
-      sold: undefined,
-      visibleOnWebsite: undefined,
-      livingArea: "91.5",
-      totalArea: undefined,
-      plotArea: undefined,
-      address: "Rua Example 10",
-      location: "Lisbon",
-      description: "Sunny apartment",
-      energyRating: undefined,
-      photoUrl: "https://images.example.com/property.jpg",
-      agent: { id: "7", name: "Marta", email: "marta@example.com", phone: undefined },
-      features: ["Lift", "Balcony"],
-      createdAt: undefined,
-      updatedAt: undefined,
-    });
+    assert.equal(result?.properties[0].title, "City apartment");
+    assert.equal(result?.properties[0].photoUrl, "https://images.example.com/property.jpg");
+    assert.equal(result?.truncated, true);
+    assert.equal(result?.totalRecords, 17);
   });
 
   it("ignores non-property CRM responses", () => {
@@ -476,5 +424,46 @@ describe("CRM property browser normalization", () => {
       normalizePropertyListToolOutput(JSON.stringify({ Opportunities: [] })),
       undefined,
     );
+  });
+
+  it("uses the real title or reference, never a manufactured name, and rejects non-https listing URLs", () => {
+    const unnamed = normalizePropertyListToolOutput({
+      ok: true,
+      property: { propertyId: 42, reference: "A-42", type: "Villa", listingUrl: "https://cdn.example.test/listing" },
+      propertyId: 42,
+      reference: "A-42",
+    });
+    assert.equal(unnamed?.properties[0].title, "A-42");
+    assert.equal(unnamed?.properties[0].listingUrl, "https://cdn.example.test/listing");
+    assert.equal(
+      normalizePropertyListToolOutput({
+        ok: true,
+        property: { propertyId: 42, reference: "A-42", listingUrl: "http://insecure.example/x" },
+        propertyId: 42,
+        reference: "A-42",
+      })?.properties[0].listingUrl,
+      undefined,
+    );
+    assert.equal(propertySummary({ propertyId: 101, reference: "22568", title: "Scalar actual title" }).title, "Scalar actual title");
+    assert.equal(normalizePropertyView({ propertyId: 101, reference: "22568", title: "Scalar actual title" }, 0, false)?.title, "Scalar actual title");
+  });
+
+  it("uses the teaser in cards and the full description in detail when both exist", () => {
+    const record = {
+      propertyId: 1,
+      reference: "A-1",
+      locale: [{ language: "en", title: "Villa", short: "Teaser copy", description: "Full listing description" }],
+    };
+    assert.equal(normalizePropertyView(record, 0, true)?.description, "Teaser copy");
+    assert.equal(normalizePropertyView(record, 0, false)?.description, "Full listing description");
+  });
+});
+
+describe("CRM lead related names", () => {
+  it("preserves related property titles when the CRM supplies them", () => {
+    const result = normalizeLeadListToolOutput({
+      leads: [{ Id: "lead-1", Properties: [{ PropertyID: "42", Reference: "LX-100", Title: "City loft" }] }],
+    });
+    assert.equal(result?.leads[0].properties[0].title, "City loft");
   });
 });

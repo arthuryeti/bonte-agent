@@ -11,6 +11,7 @@ import type {
   ScheduleFollowUpAction,
 } from "../../chat-types";
 import { getAuthSession, workspaceIdForUser } from "../../../lib/auth-session";
+import { isEmailDraftView } from "../../email-draft-data";
 import {
   completedWorkingStatusPart,
   persistedAssistantMessageForTurn,
@@ -119,9 +120,14 @@ function attachmentPart(part: GatewayHistoryDataPart) {
   };
 }
 
+function emailDraftPart(part: GatewayHistoryDataPart) {
+  if (part.type !== "email-draft" || !part.id || !isEmailDraftView(part.data)) return undefined;
+  return { type: "data-email-draft" as const, id: part.id, data: part.data };
+}
+
 function historyDataParts(parts: GatewayHistoryDataPart[] | undefined, content: string) {
   return selectRelevantDataParts(parts, content)
-    .map((part) => leadListPart(part) ?? propertyListPart(part))
+    .map((part) => leadListPart(part) ?? propertyListPart(part) ?? emailDraftPart(part))
     .filter((part): part is NonNullable<typeof part> => Boolean(part));
 }
 
@@ -206,6 +212,9 @@ export async function GET(request: Request) {
           parts: [
             { type: "text" as const, text: [message.content, attachmentMarkdown(message.data_parts)].filter(Boolean).join("\n\n") },
             ...historyDataParts(message.data_parts, message.content),
+            ...(message.data_parts ?? []).flatMap((part) => part.type === "source-document" && part.id && /^[a-f0-9-]{36}$/.test(part.id)
+              ? [{ type: "data-source-document" as const, id: part.id, data: { attachmentId: part.id } }]
+              : []),
           ],
         })),
     });

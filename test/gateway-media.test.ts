@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { DeepAgent } from "deepagents";
 import { Gateway } from "../src/gateway/gateway.js";
 import { BasePlatformAdapter } from "../src/gateway/platforms/base.js";
 import { SessionStore } from "../src/gateway/session.js";
+import { MemoryWorkflowStore, setWorkflowStore } from "../src/workflows/store.js";
+import { saveGeneratedAttachment } from "../src/workflows/documents-attachments.js";
+import { ensureTestS3 } from "./s3-harness.js";
 import type {
   MessageEvent,
   OutboundMediaType,
@@ -71,17 +72,9 @@ class RecordingAdapter extends BasePlatformAdapter {
   }
 }
 
-let tempDir = "";
-let pdfPath = "";
-
-beforeEach(() => {
-  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "crm-gateway-media-"));
-  pdfPath = path.join(tempDir, "property-A444.pdf");
-  fs.writeFileSync(pdfPath, "%PDF-1.4 test");
-});
-
-afterEach(() => {
-  fs.rmSync(tempDir, { recursive: true, force: true });
+beforeEach(async () => {
+  await ensureTestS3();
+  setWorkflowStore(new MemoryWorkflowStore());
 });
 
 describe("gateway document delivery", () => {
@@ -187,6 +180,10 @@ describe("gateway document delivery", () => {
   });
 
   it("sends a successful PDF tool result even when final prose omits MEDIA", async () => {
+    const saved = await saveGeneratedAttachment(
+      { workspaceId: "telegram:chat-1", conversationId: "chat-1", actorId: "user-1" },
+      { fileName: "property-A444.pdf", mimeType: "application/pdf", bytes: Buffer.from("%PDF-1.4 test") },
+    );
     const fakeAgent = {
       async invoke(_input: unknown, options: unknown) {
         const callbacks = (
@@ -217,80 +214,78 @@ describe("gateway document delivery", () => {
           "generate_property_pdf"
         );
         callback.handleToolEnd(
-          {
-            content: JSON.stringify({
-              success: true,
-              mediaTag: `MEDIA:${pdfPath}`,
-            }),
-          },
+          { content: JSON.stringify({ success: true, fileName: saved.fileName, attachmentId: saved.id, downloadName: "property-A444.pdf" }) },
           runId
         );
-
-        return {
-          messages: [
-            {
-              role: "assistant",
-              content: [
-                {
-                  type: "text",
-                  text: "The brochure for A444 is ready.",
-                },
-              ],
-            },
-          ],
-        };
+        return { messages: [{ role: "assistant", content: [{ type: "text", text: "The brochure for A444 is ready." }] }] };
       },
     } as unknown as DeepAgent;
-
-    const sessions = new SessionStore({
-      databaseUrl: "",
-      databaseHost: "",
-      allowInMemory: true,
-    });
-    const gateway = new Gateway(
-      fakeAgent,
-      {
-        platforms: [],
-        resetPolicy: "after_minutes",
-        resetAfterMinutes: 60,
-      },
-      sessions
-    );
+    const sessions = new SessionStore({ databaseUrl: "", databaseHost: "", allowInMemory: true });
+    const gateway = new Gateway(fakeAgent, { platforms: [], resetPolicy: "after_minutes", resetAfterMinutes: 60 }, sessions);
     const adapter = new RecordingAdapter();
-    (
-      gateway as unknown as {
-        adapters: Map<string, BasePlatformAdapter>;
-      }
-    ).adapters.set("telegram", adapter);
-
-    const event: MessageEvent = {
-      id: "message-1",
-      platform: "telegram",
-      chatId: "chat-1",
-      senderId: "user-1",
-      senderName: "Tester",
-      text: "Create a PDF for A444",
-      timestamp: new Date(),
-      isGroup: false,
+    const send = adapter.sendDocument.bind(adapter);
+    adapter.sendDocument = async (chatId, filePath, options) => {
+      assert.equal(fs.existsSync(filePath), true);
+      assert.deepEqual(fs.readFileSync(filePath), Buffer.from("%PDF-1.4 test"));
+      await send(chatId, filePath, options);
     };
-
-    await (
-      gateway as unknown as {
-        handleMessage(message: MessageEvent): Promise<void>;
-      }
-    ).handleMessage(event);
-
+    (gateway as unknown as { adapters: Map<string, BasePlatformAdapter> }).adapters.set("telegram", adapter);
+    const event: MessageEvent = {
+      id: "message-1", platform: "telegram", chatId: "chat-1", senderId: "user-1",
+      senderName: "Tester", text: "Create a PDF for A444", timestamp: new Date(), isGroup: false,
+    };
+    await (gateway as unknown as { handleMessage(message: MessageEvent): Promise<void> }).handleMessage(event);
     assert.deepEqual(adapter.messages, ["The brochure for A444 is ready."]);
     assert.equal(adapter.documents.length, 1);
-    assert.equal(adapter.documents[0].filePath, pdfPath);
+    assert.equal(fs.existsSync(adapter.documents[0].filePath), false);
     assert.equal(adapter.documents[0].options?.mimeType, "application/pdf");
-    const assistant = (await sessions.getMessages("telegram", "chat-1")).find(
-      (message) => message.role === "assistant"
-    );
+    assert.equal(adapter.documents[0].options?.fileName, "property-A444.pdf");
+    const assistant = (await sessions.getMessages("telegram", "chat-1")).find((message) => message.role === "assistant");
     assert.equal(assistant?.dataParts?.[0]?.type, "attachment");
     const attachment = assistant?.dataParts?.[0]?.data;
     assert.ok(attachment && typeof attachment === "object" && "fileName" in attachment);
     assert.equal(attachment.fileName, "property-A444.pdf");
+  });
+
+  it("deletes the native brochure temp file when send fails", async () => {
+    const bytes = Buffer.from("%PDF-1.4 fail");
+    const saved = await saveGeneratedAttachment(
+      { workspaceId: "telegram:chat-fail", conversationId: "chat-fail", actorId: "user-1" },
+      { fileName: "property-FAIL.pdf", mimeType: "application/pdf", bytes },
+    );
+    const fakeAgent = {
+      async invoke(_input: unknown, options: unknown) {
+        const callbacks = (
+          options as {
+            callbacks: Array<{
+              handleToolStart(tool: unknown, input: string, runId: string, parentRunId?: string, tags?: string[], metadata?: Record<string, unknown>, runName?: string): void;
+              handleToolEnd(output: unknown, runId: string): void;
+            }>;
+          }
+        ).callbacks;
+        callbacks[0].handleToolStart({ name: "generate_property_pdf" }, "{}", "pdf-fail", undefined, undefined, undefined, "generate_property_pdf");
+        callbacks[0].handleToolEnd(JSON.stringify({ success: true, fileName: saved.fileName, attachmentId: saved.id, downloadName: "property-FAIL.pdf" }), "pdf-fail");
+        return { messages: [{ role: "assistant", content: [{ type: "text", text: "ready" }] }] };
+      },
+    } as unknown as DeepAgent;
+    const gateway = new Gateway(fakeAgent, { platforms: [] }, new SessionStore({ databaseUrl: "", databaseHost: "", allowInMemory: true }));
+    const adapter = new RecordingAdapter();
+    let temp = "";
+    adapter.sendDocument = async (_chatId, filePath) => {
+      temp = filePath;
+      assert.equal(fs.existsSync(filePath), true);
+      throw new Error("send failed");
+    };
+    (gateway as unknown as { adapters: Map<string, BasePlatformAdapter> }).adapters.set("telegram", adapter);
+    await assert.rejects(
+      () => (gateway as unknown as { handleMessage(message: MessageEvent): Promise<void> }).handleMessage({
+        id: "message-fail", platform: "telegram", chatId: "chat-fail", senderId: "user-1",
+        senderName: "Tester", text: "PDF", timestamp: new Date(), isGroup: false,
+      }),
+      /send failed/,
+    );
+    assert.ok(temp);
+    assert.equal(fs.existsSync(temp), false);
   });
 
   it("sends a visible fallback instead of silently dropping an empty agent reply", async () => {

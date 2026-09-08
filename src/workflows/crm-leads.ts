@@ -24,7 +24,7 @@ export function minimizeLead(raw: CrmRecord): LeadRecord {
   // Preserve operational descriptions/events; do not retain unrelated identity documents or marital/birth/tax details.
   return { ...pick(raw, ["Id", "Title", "CurrentStatus", "CreateDate", "LastUpdate", "Origin", "Description", "Outcome", "OutcomeDate", "SalePrice", "EventPriority", "EventType"]),
     Agents: records(raw.Agents).map((agent) => pick(agent, ["AgentID", "AgentName"])),
-    Properties: records(raw.Properties).map((property) => pick(property, ["PropertyID", "Reference", "Address"])),
+    Properties: records(raw.Properties).map((property) => pick(property, ["PropertyID", "Reference", "Address", "Title", "Name", "Price", "LastUpdate"])),
     Customer: pick(record(raw.Customer), ["Name", "EmailAddress", "PhoneNumber", "Language"]),
     ...(Array.isArray(raw.Events) ? { Events: records(raw.Events).map((event) => ({
       ...pick(event, ["EventID", "EventType", "EventTypeID", "Title", "Location", "Description", "StartDate", "EndDate"]),

@@ -17,9 +17,10 @@ export interface WorkflowStore {
   compareAndSet<T>(scope: string, kind: string, id: string, version: number, data: T): Promise<boolean>;
   transitionWithRecords<T>(scope:string,kind:string,id:string,version:number,data:T,records:Array<{kind:string;id:string;data:unknown}>):Promise<boolean>;
   list<T = Record<string, unknown>>(scope: string, kind: string, limit?: number): Promise<WorkflowRecord<T>[]>;
+  scan<T = Record<string, unknown>>(kind: string, limit?: number, after?: { workspaceId: string; id: string }, workspaceId?: string): Promise<WorkflowRecord<T>[]>;
   remove(scope: string, kind: string, id: string): Promise<boolean>;
   due<T = Record<string, unknown>>(kind: string, now: string, limit?: number): Promise<WorkflowRecord<T>[]>;
-  expired<T = Record<string, unknown>>(kind: string, now: string, limit?: number): Promise<WorkflowRecord<T>[]>;
+  expired<T = Record<string, unknown>>(kind: string, now: string, limit?: number, after?: { expiresAt: string; workspaceId: string; id: string }): Promise<WorkflowRecord<T>[]>;
   close(): Promise<void>;
 }
 
@@ -76,6 +77,21 @@ export class PostgresWorkflowStore implements WorkflowStore {
     const { rows } = await this.pool.query("SELECT * FROM workflow_records WHERE workspace_id=$1 AND kind=$2 ORDER BY updated_at DESC,id LIMIT $3", [scope,kind,Math.max(1,Math.min(10000,Math.floor(limit)))]);
     return rows.map(row => record<T>(row));
   }
+  async scan<T>(kind: string, limit = 500, after?: { workspaceId: string; id: string }, workspaceId?: string): Promise<WorkflowRecord<T>[]> {
+    const n = Math.max(1, Math.min(1000, Math.floor(limit)));
+    if (workspaceId) {
+      validate(workspaceId, kind);
+      const { rows } = after
+        ? await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 AND workspace_id=$2 AND id>$3 ORDER BY id LIMIT $4", [kind, workspaceId, after.id, n])
+        : await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 AND workspace_id=$2 ORDER BY id LIMIT $3", [kind, workspaceId, n]);
+      return rows.map(row => record<T>(row));
+    }
+    validate("worker", kind);
+    const { rows } = after
+      ? await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 AND (workspace_id,id)>($2,$3) ORDER BY workspace_id,id LIMIT $4", [kind, after.workspaceId, after.id, n])
+      : await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 ORDER BY workspace_id,id LIMIT $2", [kind, n]);
+    return rows.map(row => record<T>(row));
+  }
   async remove(scope: string, kind: string, id: string): Promise<boolean> {
     validate(scope,kind,id);
     const result = await this.pool.query("DELETE FROM workflow_records WHERE workspace_id=$1 AND kind=$2 AND id=$3", [scope,kind,id]);
@@ -89,8 +105,13 @@ export class PostgresWorkflowStore implements WorkflowStore {
     return rows.map(row => record<T>(row));
   }
   async close(): Promise<void> { await this.pool.end(); }
-  async expired<T>(kind:string,now:string,limit=100):Promise<WorkflowRecord<T>[]> {
-    validate("worker",kind);const {rows}=await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 AND data->>'expiresAt'<=$2 ORDER BY data->>'expiresAt',id LIMIT $3",[kind,now,Math.max(1,Math.min(limit,1000))]);return rows.map(r=>record<T>(r));
+  async expired<T>(kind:string,now:string,limit=100,after?:{expiresAt:string;workspaceId:string;id:string}):Promise<WorkflowRecord<T>[]> {
+    validate("worker",kind);
+    const n=Math.max(1,Math.min(limit,1000));
+    const {rows}=after
+      ? await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 AND data->>'expiresAt'<=$2 AND (data->>'expiresAt',workspace_id,id)>($3,$4,$5) ORDER BY data->>'expiresAt',workspace_id,id LIMIT $6",[kind,now,after.expiresAt,after.workspaceId,after.id,n])
+      : await this.pool.query("SELECT * FROM workflow_records WHERE kind=$1 AND data->>'expiresAt'<=$2 ORDER BY data->>'expiresAt',workspace_id,id LIMIT $3",[kind,now,n]);
+    return rows.map(r=>record<T>(r));
   }
 }
 
@@ -124,12 +145,39 @@ export class MemoryWorkflowStore implements WorkflowStore {
   async list<T>(scope:string,kind:string,limit=100):Promise<WorkflowRecord<T>[]> {
     validate(scope,kind);return structuredClone([...this.records.values()].filter(r=>r.workspaceId===scope&&r.kind===kind).sort((a,b)=>b.updatedAt.localeCompare(a.updatedAt)||a.id.localeCompare(b.id)).slice(0,limit)) as WorkflowRecord<T>[];
   }
+  async scan<T>(kind:string,limit=500,after?:{workspaceId:string;id:string},workspaceId?:string):Promise<WorkflowRecord<T>[]>{
+    validate(workspaceId ?? "worker", kind);
+    const n=Math.max(1,Math.min(1000,Math.floor(limit)));
+    const rows=[...this.records.values()].filter(r=>r.kind===kind&&(!workspaceId||r.workspaceId===workspaceId))
+      .sort((a,b)=>a.workspaceId.localeCompare(b.workspaceId)||a.id.localeCompare(b.id));
+    const newer=after
+      ? workspaceId
+        ? rows.filter(r=>r.id>after.id)
+        : rows.filter(r=>r.workspaceId>after.workspaceId||(r.workspaceId===after.workspaceId&&r.id>after.id))
+      : rows;
+    return structuredClone(newer.slice(0, n)) as WorkflowRecord<T>[];
+  }
   async remove(scope:string,kind:string,id:string):Promise<boolean>{return this.records.delete(this.key(scope,kind,id));}
   async due<T>(kind:string,now:string,limit=100):Promise<WorkflowRecord<T>[]>{
     return structuredClone([...this.records.values()].filter(r=>{const d=r.data as Record<string,unknown>;return r.kind===kind&&d.state==="scheduled"&&typeof d.nextRunAt==="string"&&d.nextRunAt<=now;}).slice(0,limit)) as WorkflowRecord<T>[];
   }
   async close():Promise<void>{}
-  async expired<T>(kind:string,now:string,limit=100):Promise<WorkflowRecord<T>[]> {return structuredClone([...this.records.values()].filter(r=>{const d=r.data as Record<string,unknown>;return r.kind===kind&&typeof d.expiresAt==="string"&&d.expiresAt<=now;}).slice(0,limit)) as WorkflowRecord<T>[];}
+  async expired<T>(kind:string,now:string,limit=100,after?:{expiresAt:string;workspaceId:string;id:string}):Promise<WorkflowRecord<T>[]> {
+    const n=Math.max(1,Math.min(1000,Math.floor(limit)));
+    const rows=structuredClone([...this.records.values()].filter(r=>{
+      const d=r.data as Record<string,unknown>;
+      return r.kind===kind&&typeof d.expiresAt==="string"&&d.expiresAt<=now;
+    }).sort((a,b)=>{
+      const ae=String((a.data as Record<string,unknown>).expiresAt);
+      const be=String((b.data as Record<string,unknown>).expiresAt);
+      return ae.localeCompare(be)||a.workspaceId.localeCompare(b.workspaceId)||a.id.localeCompare(b.id);
+    })) as WorkflowRecord<T>[];
+    const newer=after?rows.filter(r=>{
+      const exp=String((r.data as Record<string,unknown>).expiresAt);
+      return exp>after.expiresAt||(exp===after.expiresAt&&(r.workspaceId>after.workspaceId||(r.workspaceId===after.workspaceId&&r.id>after.id)));
+    }):rows;
+    return newer.slice(0,n);
+  }
 }
 
 let singleton: WorkflowStore | undefined;

@@ -93,8 +93,9 @@ describe("gateway session storage", () => {
           ],
         );
         assert.equal(messages[1]?.dataParts?.[0]?.id, "leads-1");
-        assert.equal((await secondStore.findLegacyBrochureAttachment(workspaceId, fileName))?.chatId, chatId);
-        assert.equal(await secondStore.findLegacyBrochureAttachment("another-workspace", fileName), undefined);
+        const proofs = await secondStore.listLegacyBrochureProofs();
+        assert.equal(proofs.some((proof) => proof.workspaceId === workspaceId && proof.fileName === fileName && proof.chatId === chatId), true);
+        assert.equal(proofs.some((proof) => proof.workspaceId === "another-workspace"), false);
         assert.equal((await secondStore.listSessions("web")).some(
           (session) => session.id === chatId,
         ), true);

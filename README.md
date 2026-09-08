@@ -540,31 +540,67 @@ persists, verify the deployment server's public IP in the CRM security rules.
 ## Property PDF Brochures
 
 The agent includes a `generate_property_pdf` tool. Ask for a property PDF by
-reference or CRM property ID, for example:
+reference or CRM property ID. The tool fetches `/api/Property/ListProperties`,
+renders a branded PDF in memory, and stores bytes in the private S3 bucket.
+Web chat gets a protected download link and attachment metadata (no disk path).
+Telegram/WhatsApp send a short-lived native temp file that is deleted after
+upload, including when send fails.
 
-```bash
-npm run dev -- "Generate a PDF brochure for property ABC123"
-```
-
-The tool fetches the listing from `/api/Property/ListProperties`, normalizes
-title, description, facts, features, agent details, and photos, asks the
-configured LLM to write the brochure hook and short intro, then writes a
-branded PDF to `output/pdf/property-<reference>.pdf`. If the LLM copy call
-fails, the tool falls back to conservative copy from the listing data so PDF
-generation still completes.
+Brochures use the Bonte Filipidis website logo and typography, charcoal tones,
+and editorial photo layouts. The standard template includes the property story,
+facts, amenities, and gallery; `one_page` includes a compact summary, key facts,
+and agent contact. Brand assets are bundled in `templates/brochure/`.
 
 Optional brand configuration:
 
 ```bash
-PROPERTY_PDF_BRAND_NAME=Bonte
+PROPERTY_PDF_BRAND_NAME="Bonte Filipidis"
 PROPERTY_PDF_LOGO_PATH=/absolute/path/to/logo.png
-PROPERTY_PDF_PRIMARY_COLOR=#173f38
-PROPERTY_PDF_ACCENT_COLOR=#c7a76c
+PROPERTY_PDF_PRIMARY_COLOR=#373434
+PROPERTY_PDF_ACCENT_COLOR=#8b8178
 ```
 
-In the messaging gateway, the agent emits a `MEDIA:/absolute/path.pdf` marker
-after generation. The gateway strips that marker from visible text and uploads
-the PDF as a native Telegram or WhatsApp document.
+Do not emit `MEDIA:` filesystem tags. Runtime does not read leftover
+`output/pdf` files.
+
+## Document storage
+
+Set `BONTE_S3_BUCKET` and `BONTE_S3_REGION` (or `AWS_REGION`). Credentials come
+from the default AWS chain or an instance/task IAM role. `BONTE_S3_ENDPOINT` is
+only for S3-compatible services. Missing config is a setup error; local disk is
+not a fallback. Metadata, email drafts and chat history stay in PostgreSQL.
+Keep the `agent-output` volume for listing-link JSON, templates and scratch —
+do not wipe it as part of S3 cutover.
+
+Copy existing local attachment bytes with an inventory first:
+
+```bash
+npm run attachments:migrate-s3
+BONTE_S3_MIGRATE_CONFIRM="$BONTE_S3_BUCKET" npm run attachments:migrate-s3 -- --apply
+```
+
+Back up the database and old attachment tree, then freeze writes before
+`--apply`. The job copies complete live rows whose local bytes match stored
+hashes, keeps original expiry, and rolls back new S3 objects if metadata
+publish fails. Expired or invalid locators are not copied or deleted.
+Rerun is safe. A crash between PutObject and DB publish can leave S3 orphans
+until bucket lifecycle rules remove them; versioned buckets need version
+deletes to erase objects. Historical brochures migrate only from oldest
+in-window assistant attachment proofs (`workspace_` chat ids); existing
+`generated_file` mappings are not resurrected.
+
+`npm test` talks to a dedicated loopback MinIO, never production `BONTE_S3_*`
+or AWS keys. If nothing is already listening on `127.0.0.1:19000`:
+
+```bash
+docker run --rm -p 127.0.0.1:19000:9000 \
+  -e MINIO_ROOT_USER=minioadmin -e MINIO_ROOT_PASSWORD=minioadmin \
+  minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
+```
+
+Override the test target only with `BONTE_TEST_S3_*` (loopback endpoints).
+Non-loopback test endpoints are rejected.
+
 
 ## Broker Reminder Sub-Agent
 
@@ -628,4 +664,15 @@ That's it — the factory handles the rest.
 
 ## Agent workflows
 
-Lead audits and monitoring, saved follow-ups, exact property matching, contact intake, email/NDA drafts and team-calendar viewings are implemented. Apply the new workflow migration and configure the enabled integrations using [the setup guide](docs/agent-workflows-setup.md). Missing credentials, document inputs or verified CRM mappings are reported by the agent; no production writes are enabled by installing this release alone.
+Lead audits and monitoring, saved follow-ups, exact property matching, contact
+intake, email/NDA drafts and team-calendar viewings are implemented. Property
+cards use the listing title (reference as fallback). Lead and property drawers
+fetch the latest record through the authenticated `/api/crm` proxy, not chat
+history. Email drafts stay unsent: Mail app opens a `mailto:` with the saved
+To/subject/body (blank To and ~30k-character bodies need manual paste;
+attachments are downloaded by hand). Opening the mail app does not mark a
+draft sent. Native OS compose was not visually verified in headless checks.
+Verified Bontefilipidis listing URLs use `CRM_LISTING_SOURCE_URL` (default
+blank until set to `https://bontefilipidis.com/property-sitemap1.xml`) and
+`CRM_LISTING_ALLOWED_HOSTS`. Apply the workflow migration and remaining
+settings using [the setup guide](docs/agent-workflows-setup.md).

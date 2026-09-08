@@ -12,6 +12,7 @@ import type {
   LeadListView,
   LeadView,
 } from "./chat-types";
+import { useCrmDetails } from "./crm-details";
 
 interface LeadResultsProps {
   data: LeadListView;
@@ -28,14 +29,13 @@ export interface FollowUpValues {
 }
 
 interface LeadDrawerProps {
-  lead: LeadView;
+  leadId: string;
   disabled: boolean;
   onClose: () => void;
   onSelectProperty: (
     property: LeadView["properties"][number],
     index: number,
   ) => void;
-  onRefresh: (lead: LeadView) => void;
   onSchedule: (lead: LeadView, values: FollowUpValues) => void;
 }
 
@@ -159,7 +159,7 @@ export function LeadResults({ data, onSelect }: LeadResultsProps) {
         <span className="lead-results-total">
           {data.totalRecords > data.returnedRecords
             ? `${data.totalRecords} total`
-            : "Live"}
+            : "Saved result"}
         </span>
       </div>
 
@@ -187,6 +187,7 @@ export function LeadResults({ data, onSelect }: LeadResultsProps) {
                 </span>
                 <span className="lead-meta">
                   {lead.title !== name ? <span>{lead.title}</span> : null}
+                  {lead.properties[0]?.title ? <span>{lead.properties[0].title}</span> : null}
                   {lead.properties[0]?.reference ? <span>{lead.properties[0].reference}</span> : null}
                   {lead.agents[0]?.name ? <span>{lead.agents[0].name}</span> : null}
                   {date ? <span>{date}</span> : null}
@@ -222,29 +223,34 @@ export function LeadResults({ data, onSelect }: LeadResultsProps) {
 }
 
 export function LeadDrawer({
-  lead,
+  leadId,
   disabled,
   onClose,
   onSelectProperty,
-  onRefresh,
   onSchedule,
 }: LeadDrawerProps) {
+  const { data, loading, error, refresh } = useCrmDetails("lead", leadId);
+  const lead = data?.lead;
   const [scheduling, setScheduling] = useState(false);
   const [scheduledFor, setScheduledFor] = useState("");
   const [note, setNote] = useState("");
   const [formError, setFormError] = useState("");
   const [copied, setCopied] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const contactName = leadName(lead);
-  const links = phoneLinks(lead.contact?.phone);
+  const contactName = lead ? leadName(lead) : "Lead details";
+  const links = phoneLinks(lead?.contact?.phone);
 
   useEffect(() => {
+    const trigger = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      if (trigger?.isConnected) trigger.focus();
+    };
   }, [onClose]);
 
   const openScheduler = () => {
@@ -256,6 +262,7 @@ export function LeadDrawer({
   const submitFollowUp = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const date = new Date(scheduledFor);
+    if (!lead) return;
     if (!scheduledFor || !Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {
       setFormError("Choose a future date and time.");
       return;
@@ -267,6 +274,7 @@ export function LeadDrawer({
   };
 
   const copyLeadId = async () => {
+    if (!lead) return;
     try {
       await navigator.clipboard.writeText(lead.id);
       setCopied(true);
@@ -295,13 +303,18 @@ export function LeadDrawer({
             <div>
               <p className="eyebrow">Lead details</p>
               <h2 id="lead-drawer-title">{contactName}</h2>
-              {lead.title !== contactName ? <p>{lead.title}</p> : null}
+              {lead && lead.title !== contactName ? <p>{lead.title}</p> : null}
             </div>
           </div>
           <button ref={closeRef} className="drawer-close" type="button" onClick={onClose} aria-label="Close lead details">×</button>
         </header>
 
         <div className="drawer-scroll">
+          {loading ? <p role="status">Loading fresh CRM details…</p> : null}
+          {error ? <p role="alert">{error}</p> : null}
+          {data ? <p className="property-updated">Fetched from CRM <time dateTime={data.fetchedAt}>{new Date(data.fetchedAt).toLocaleString("en-GB")}</time></p> : null}
+          {data?.warnings?.map((warning, index) => <p className="empty-copy" key={index}>{warning}</p>)}
+          {lead ? <>
           <div className="drawer-summary">
             {lead.status ? <span className={`status-pill ${statusTone(lead.status)}`}>{lead.status}</span> : null}
             {lead.priority ? <span className="priority-pill">{lead.priority} priority</span> : null}
@@ -345,10 +358,11 @@ export function LeadDrawer({
                     key={property.id || property.reference || index}
                     type="button"
                     onClick={() => onSelectProperty(property, index)}
-                    aria-label={`View property ${property.reference || index + 1}`}
+                    aria-label={`View property ${property.title || property.reference || property.id || index + 1}${property.title && property.reference ? ` (${property.reference})` : ""}`}
                   >
                     <div>
-                      <strong>{property.reference || `Property ${index + 1}`}</strong>
+                      <strong>{property.title || property.reference || property.id || `Property ${index + 1}`}</strong>
+                      {property.title && property.reference ? <span>{property.reference}</span> : null}
                       <span>{property.address || "Address not available"}</span>
                     </div>
                     <span className="property-item-end">
@@ -382,13 +396,14 @@ export function LeadDrawer({
             ) : <p className="empty-copy">No recent activity was included in this result.</p>}
           </section>
 
-          <button className="refresh-lead" type="button" onClick={() => onRefresh(lead)} disabled={disabled}>
-            Fetch latest details from CRM
+          </> : null}
+          <button className="refresh-lead" type="button" onClick={refresh} disabled={loading}>
+            {loading ? "Loading CRM details…" : error ? "Retry" : "Refresh from CRM"}
           </button>
         </div>
 
         <footer className={`drawer-footer ${scheduling ? "scheduling" : ""}`}>
-          {scheduling ? (
+          {scheduling && lead ? (
             <form className="follow-up-form" onSubmit={submitFollowUp}>
               <div className="follow-up-heading">
                 <div><p className="eyebrow">Confirmation</p><h3>Schedule follow-up</h3></div>
@@ -407,7 +422,7 @@ export function LeadDrawer({
               <button className="confirm-action" type="submit" disabled={disabled}>Confirm follow-up</button>
             </form>
           ) : (
-            <button className="primary-action" type="button" onClick={openScheduler} disabled={disabled}>
+            <button className="primary-action" type="button" onClick={openScheduler} disabled={disabled || !lead}>
               Schedule follow-up
             </button>
           )}

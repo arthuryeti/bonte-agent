@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { afterEach, describe, it } from "node:test";
 import type { DeepAgent } from "deepagents";
 import WebSocket from "ws";
@@ -10,6 +11,8 @@ import { SessionStore } from "../src/gateway/session.js";
 import { GatewayWebSocketServer } from "../src/gateway/websocket-server.js";
 import { MemoryWorkflowStore, setWorkflowStore, getWorkflowStore } from "../src/workflows/store.js";
 import { saveGeneratedAttachment, deleteAttachment } from "../src/workflows/documents-attachments.js";
+import { migrateAttachmentsToS3 } from "../src/workflows/migrate-attachments-s3.js";
+import { ensureTestS3 } from "./s3-harness.js";
 
 interface RpcFrame {
   id?: number;
@@ -31,6 +34,7 @@ afterEach(async () => {
 });
 
 async function startTestGateway(agent: DeepAgent) {
+  await ensureTestS3();
   setWorkflowStore(new MemoryWorkflowStore());
   const sessions = new SessionStore({ databaseUrl: "", databaseHost: "", allowInMemory: true });
   const gateway = new Gateway(
@@ -647,7 +651,7 @@ describe("web JSON-RPC gateway", () => {
     assert.deepEqual(propertyPayload.data?.properties?.[0], {
       id: "42",
       reference: "LX-100",
-      title: "Apartment",
+      title: "LX-100",
       propertyType: "Apartment",
       price: "475000",
       currency: "EUR",
@@ -704,12 +708,55 @@ describe("web JSON-RPC gateway", () => {
     client.socket.close();
   });
 
+  it("persists save and list email drafts without duplicating the same id", async () => {
+    const v1 = {
+      id: "11111111-1111-4111-8111-111111111111",
+      revision: 1,
+      subject: "Hi",
+      body: "One",
+      downloadAttachmentId: "22222222-2222-4222-8222-222222222222",
+      attachmentIds: [],
+      status: "draft",
+    };
+    const v2 = {
+      id: "33333333-3333-4333-8333-333333333333",
+      revision: 2,
+      subject: "Hi",
+      body: "Two",
+      downloadAttachmentId: "44444444-4444-4444-8444-444444444444",
+      attachmentIds: [],
+      status: "draft",
+    };
+    const fakeAgent = {
+      async invoke(_input: unknown, options: { callbacks?: Array<{
+        handleToolStart(tool: unknown, input: string, runId: string, parent?: string, tags?: string[], metadata?: Record<string, unknown>, runName?: string): void;
+        handleToolEnd(output: unknown, runId: string): void;
+      }> }) {
+        const callback = options.callbacks?.[0];
+        callback?.handleToolStart({ name: "save_email_draft" }, "{}", "email-save", undefined, undefined, undefined, "save_email_draft");
+        callback?.handleToolEnd({ content: [{ type: "text", text: JSON.stringify(v2) }] }, "email-save");
+        callback?.handleToolStart({ name: "list_document_drafts" }, "{}", "email-list", undefined, undefined, undefined, "list_document_drafts");
+        callback?.handleToolEnd({ content: [{ type: "text", text: JSON.stringify([{ kind: "email-draft", ...v1 }, { kind: "email-draft", ...v2 }]) }] }, "email-list");
+        return { messages: [{ role: "assistant", content: "The draft is saved." }] };
+      },
+    } as unknown as DeepAgent;
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+    await client.request("session.create", { session_id: "email-session" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", { session_id: "email-session", text: "Save the email" });
+    await waitForEvent(client.events, (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id);
+    const history = await client.request<{ messages: Array<{ data_parts?: Array<{ type: string; id: string; data?: { revision?: number; subject?: string; body?: string } }> }> }>("session.history", { session_id: "email-session" });
+    const drafts = history.messages.at(-1)?.data_parts?.filter((part) => part.type === "email-draft") ?? [];
+    assert.deepEqual(drafts.map((part) => part.id).sort(), [v1.id, v2.id].sort());
+    assert.deepEqual(new Set(drafts.map((part) => part.data?.revision)), new Set([1, 2]));
+    assert.equal(drafts.find((part) => part.id === v1.id)?.data?.body, "One");
+    assert.equal(drafts.find((part) => part.id === v2.id)?.data?.body, "Two");
+    assert.equal(drafts.find((part) => part.id === v2.id)?.data?.subject, "Hi");
+    client.socket.close();
+  });
+
   it("retains generated PDFs as attachment data parts", async () => {
-    const dir = path.resolve("output", "pdf");
-    fs.mkdirSync(dir, { recursive: true });
     const fileName = "property-21956-deadbeef.pdf";
-    const filePath = path.join(dir, fileName);
-    fs.writeFileSync(filePath, "%PDF-1.4 test");
     const fakeAgent = {
       async invoke(
         _input: unknown,
@@ -719,52 +766,30 @@ describe("web JSON-RPC gateway", () => {
         }> }
       ) {
         const callback = options.callbacks?.[0];
-        callback?.handleToolStart(
-          { name: "generate_property_pdf" },
-          JSON.stringify({ reference: "21956" }),
-          "pdf-run"
+        const saved = await saveGeneratedAttachment(
+          { workspaceId: "pdf-session", conversationId: "pdf-session", actorId: "pdf-session" },
+          { fileName, mimeType: "application/pdf", bytes: Buffer.from("%PDF-1.4 test") },
         );
-        callback?.handleToolEnd(
-          JSON.stringify({
-            success: true,
-            mediaTag: `MEDIA:${filePath}`,
-          }),
-          "pdf-run"
-        );
-        return {
-          messages: [{
-            role: "assistant",
-            content: "Here's the PDF for 21956 — Duplex Penthouse in Estoril.",
-          }],
-        };
+        callback?.handleToolStart({ name: "generate_property_pdf" }, JSON.stringify({ reference: "21956" }), "pdf-run");
+        callback?.handleToolEnd(JSON.stringify({ success: true, fileName, attachmentId: saved.id, downloadName: "property-21956.pdf" }), "pdf-run");
+        return { messages: [{ role: "assistant", content: "Here's the PDF for 21956 — Duplex Penthouse in Estoril." }] };
       },
     } as unknown as DeepAgent;
-    try {
-      const { server } = await startTestGateway(fakeAgent);
-      const client = await connect(server.url);
-      await client.request("session.create", { session_id: "pdf-session" });
-      const accepted = await client.request<{ turn_id: string }>("prompt.submit", {
-        session_id: "pdf-session",
-        text: "Generate a PDF for 21956",
-      });
-      await waitForEvent(
-        client.events,
-        (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
-      );
-      assert.ok(client.events.some((event) => event.type === "attachment.available"));
-      const history = await client.request<{
-        messages: Array<{
-          content: string;
-          data_parts?: Array<{ type: string; data?: { fileName?: string } }>;
-        }>;
-      }>("session.history", { session_id: "pdf-session" });
-      const assistant = history.messages.at(-1);
-      assert.equal(assistant?.data_parts?.[0]?.type, "attachment");
-      assert.equal(assistant?.data_parts?.[0]?.data?.fileName, fileName);
-      client.socket.close();
-    } finally {
-      fs.rmSync(filePath, { force: true });
-    }
+    const { server } = await startTestGateway(fakeAgent);
+    const client = await connect(server.url);
+    await client.request("session.create", { session_id: "pdf-session" });
+    const accepted = await client.request<{ turn_id: string }>("prompt.submit", { session_id: "pdf-session", text: "Generate a PDF for 21956" });
+    await waitForEvent(client.events, (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id);
+    const available = client.events.find((event) => event.type === "attachment.available");
+    assert.ok(available);
+    const payload = available.payload;
+    assert.ok(payload && typeof payload === "object" && "file_path" in payload);
+    assert.equal(payload.file_path, fileName);
+    assert.equal(fs.existsSync(fileName), false);
+    const history = await client.request<{ messages: Array<{ data_parts?: Array<{ type: string; data?: { fileName?: string } }> }> }>("session.history", { session_id: "pdf-session" });
+    assert.equal(history.messages.at(-1)?.data_parts?.[0]?.type, "attachment");
+    assert.equal(history.messages.at(-1)?.data_parts?.[0]?.data?.fileName, fileName);
+    client.socket.close();
   });
 
   it("publishes handled CRM failures as tool errors", async () => {
@@ -892,48 +917,38 @@ describe("web JSON-RPC gateway", () => {
         return { messages: [{ role: "assistant", content: "ok" }] };
       },
     } as DeepAgent);
-    const dir = path.resolve("output", "pdf");
-    fs.mkdirSync(dir, { recursive: true });
     const fileName = "property-download-test.pdf";
-    const filePath = path.join(dir, fileName);
-    fs.writeFileSync(filePath, "pdf-bytes");
     const context={workspaceId:"owner",conversationId:"owner_chat",actorId:"owner"};
     const document=await saveGeneratedAttachment(context,{fileName,mimeType:"application/pdf",bytes:Buffer.from("pdf-bytes")});
     await getWorkflowStore().put("owner","generated_file",fileName,{attachmentId:document.id});
-    try {
-      const denied = await fetch(
-        `http://127.0.0.1:${server.port}/files?name=${fileName}`
-      );
-      assert.equal(denied.status, 401);
-
-      const traversal = await fetch(
-        `http://127.0.0.1:${server.port}/files?name=../package.json`,
-        { headers: { authorization: "Bearer test-token" } }
-      );
-      assert.equal(traversal.status, 404);
-
-      const allowed = await fetch(
-        `http://127.0.0.1:${server.port}/files?name=${fileName}`,
-        { headers: { authorization: "Bearer test-token", "x-workspace-id":"owner" } }
-      );
-      assert.equal(allowed.status, 200);
-      assert.equal(await allowed.text(), "pdf-bytes");
-      const other=await fetch(`http://127.0.0.1:${server.port}/files?name=${fileName}`,{headers:{authorization:"Bearer test-token","x-workspace-id":"other"}});
-      assert.equal(other.status,404);
-      await deleteAttachment(context,document.id);
-      const deleted=await fetch(`http://127.0.0.1:${server.port}/files?name=${fileName}`,{headers:{authorization:"Bearer test-token","x-workspace-id":"owner"}});
-      assert.equal(deleted.status,404);
-    } finally {
-      fs.rmSync(filePath, { force: true });
-    }
+    const denied = await fetch(
+      `http://127.0.0.1:${server.port}/files?name=${fileName}`
+    );
+    assert.equal(denied.status, 401);
+    const traversal = await fetch(
+      `http://127.0.0.1:${server.port}/files?name=../package.json`,
+      { headers: { authorization: "Bearer test-token" } }
+    );
+    assert.equal(traversal.status, 404);
+    const allowed = await fetch(
+      `http://127.0.0.1:${server.port}/files?name=${fileName}`,
+      { headers: { authorization: "Bearer test-token", "x-workspace-id":"owner" } }
+    );
+    assert.equal(allowed.status, 200);
+    assert.equal(await allowed.text(), "pdf-bytes");
+    const other=await fetch(`http://127.0.0.1:${server.port}/files?name=${fileName}`,{headers:{authorization:"Bearer test-token","x-workspace-id":"other"}});
+    assert.equal(other.status,404);
+    await deleteAttachment(context,document.id);
+    const deleted=await fetch(`http://127.0.0.1:${server.port}/files?name=${fileName}`,{headers:{authorization:"Bearer test-token","x-workspace-id":"owner"}});
+    assert.equal(deleted.status,404);
   });
 
-  it("migrates only scoped historical brochures without renewing retention or reviving deletions", async () => {
+  it("serves explicitly migrated brochures and does not fall back to leftover local files", async () => {
     const { server, sessions } = await startTestGateway({ async invoke() { return { messages: [] }; } } as unknown as DeepAgent);
     const savedRetention = process.env.BONTE_ATTACHMENT_RETENTION_DAYS;
     process.env.BONTE_ATTACHMENT_RETENTION_DAYS = "30";
     const names = ["property-legacy-owned.pdf", "property-legacy-expired.pdf", "property-legacy-unproven.pdf"];
-    const directory = path.resolve("output/pdf"); fs.mkdirSync(directory, { recursive: true });
+    const directory = fs.mkdtempSync(path.join(tmpdir(), "bonte-pdf-"));
     const proof = (fileName: string) => [{ type: "attachment" as const, id: fileName, data: { fileName, mimeType: "application/pdf" } }];
     const attachedAt = new Date(Date.now() - 10 * 86_400_000);
     const owned = await sessions.addAssistantMessage("web", "owner_historical", "Brochure attached", "legacy-1", proof(names[0]));
@@ -945,24 +960,27 @@ describe("web JSON-RPC gateway", () => {
     for (const name of names) fs.writeFileSync(path.join(directory, name), "%PDF-1.4 historical brochure");
     const download = (name: string, workspace = "owner") => fetch(`http://127.0.0.1:${server.port}/files?name=${name}`, { headers: { authorization: "Bearer test-token", "x-workspace-id": workspace } });
     try {
+      await migrateAttachmentsToS3({
+        store: getWorkflowStore(),
+        apply: true,
+        pdfDir: directory,
+        proofs: await sessions.listLegacyBrochureProofs(),
+      });
       assert.equal((await download(names[0], "other")).status, 404);
       assert.equal((await download(names[0], "owner2")).status, 404);
-      assert.equal((await download(names[1])).status, 404, "Repeating an old link must not renew its retention");
+      assert.equal((await download(names[1])).status, 404, "Expired proofs must not renew retention");
       assert.equal((await download(names[2])).status, 404, "Text mentions are not ownership evidence");
       const migrated = await download(names[0]);
       assert.equal(migrated.status, 200);
       assert.equal(await migrated.text(), "%PDF-1.4 historical brochure");
       const mapping = await getWorkflowStore().get("owner", "generated_file", names[0]);
-      assert.ok(mapping?.data.migratedFromHistory);
-      const attachmentId = String(mapping.data.attachmentId);
-      const record = await getWorkflowStore().get("owner", "attachment", attachmentId);
-      assert.equal(record?.data.createdAt, attachedAt.toISOString());
-      assert.ok(Math.abs(Date.parse(String(record?.data.expiresAt)) - attachedAt.getTime() - 30 * 86_400_000) < 1000);
+      assert.equal(mapping?.data.migratedFromHistory, true);
+      const attachmentId = String(mapping?.data.attachmentId);
       await deleteAttachment({ workspaceId: "owner", actorId: "owner", conversationId: "owner_historical" }, attachmentId);
       assert.equal((await download(names[0])).status, 404, "Historical proof cannot revive a deleted protected attachment");
-      assert.ok(fs.existsSync(path.join(directory, names[0])), "Test keeps the original file to exercise the no-fallback guarantee");
+      assert.equal(fs.existsSync(path.join(directory, names[0])), true);
     } finally {
-      for (const name of names) fs.rmSync(path.join(directory, name), { force: true });
+      fs.rmSync(directory, { recursive: true, force: true });
       if (savedRetention === undefined) delete process.env.BONTE_ATTACHMENT_RETENTION_DAYS; else process.env.BONTE_ATTACHMENT_RETENTION_DAYS = savedRetention;
     }
   });

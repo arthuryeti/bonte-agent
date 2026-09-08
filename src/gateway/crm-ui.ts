@@ -1,5 +1,6 @@
 import { extractAllMessageText } from "../agent-response.js";
 import type {
+  EmailDraftView,
   LeadAgentView,
   LeadEventView,
   LeadListView,
@@ -11,6 +12,7 @@ import type {
 } from "./crm-ui-types.js";
 
 export type {
+  EmailDraftView,
   LeadAgentView,
   LeadContactView,
   LeadEventView,
@@ -79,6 +81,33 @@ function asSafeUrl(...values: unknown[]): string | undefined {
   }
 }
 
+function verifiedListingUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function stripHtml(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const text = value
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return text || undefined;
+}
+
 function parseToolOutput(output: unknown): unknown {
   if (
     isRecord(output) &&
@@ -133,9 +162,11 @@ function normalizeProperty(value: unknown): LeadPropertyView | undefined {
   const reference = firstString(value.Reference);
   const address = firstString(value.Address, value.Location);
   if (!id && !reference && !address) return undefined;
+  const title = firstString(value.Title, value.title, value.Name);
   return {
     id,
     reference,
+    ...(title ? { title } : {}),
     address,
     price: firstString(value.Price),
     updatedAt: firstString(value.LastUpdate),
@@ -177,9 +208,10 @@ function normalizePropertyPhoto(value: unknown): string | undefined {
   return asSafeUrl(value.Url, value.URL, value.url);
 }
 
-function normalizeListedProperty(
+export function normalizePropertyView(
   value: unknown,
-  index: number
+  index = 0,
+  compactPreview = true
 ): PropertyView | undefined {
   if (!isRecord(value)) return undefined;
   const id = firstString(value.propertyId, value.PropertyID, value.PropertyId, value.id);
@@ -192,8 +224,7 @@ function normalizeListedProperty(
     locales[0];
   const location = normalizePropertyLocation(value.location);
   const propertyType = firstString(value.typeLocale, value.type, value.PropertyType);
-  const title = firstString(preferredLocale?.title, propertyType, reference) ||
-    `Property ${index + 1}`;
+  const title = firstString(preferredLocale?.title, value.title) || reference || id;
   const photos = (Array.isArray(value.photos) ? value.photos : [])
     .filter(isRecord)
     .sort((left, right) =>
@@ -214,14 +245,17 @@ function normalizeListedProperty(
       : Array.isArray(value.features) ? value.features : [];
   const features = rawFeatures
     .map(asString)
-    .filter((feature): feature is string => Boolean(feature))
-    .slice(0, 12);
+    .filter((feature): feature is string => Boolean(feature));
+  const description = stripHtml(compactPreview
+    ? firstString(preferredLocale?.short, preferredLocale?.description)
+    : firstString(preferredLocale?.description, preferredLocale?.short));
+  const listingUrl = verifiedListingUrl(value.listingUrl);
 
   return {
     id: id || reference || `property-${index + 1}`,
     internalId: firstString(value.internalId, value.InternalId),
     reference: reference || id || `Property ${index + 1}`,
-    title,
+    title: title!, // The ID/reference guard above guarantees the fallback.
     status: firstString(value.status, value.Status),
     businessType: firstString(
       value.businessTypeLocale,
@@ -243,11 +277,12 @@ function normalizeListedProperty(
     plotArea: firstString(value.plot_area, value.plotArea),
     address: location.address,
     location: location.location,
-    description: firstString(preferredLocale?.short, preferredLocale?.description)?.slice(0, 600),
+    description: compactPreview ? description?.slice(0, 600) : description,
     energyRating: firstString(value.energy_rating),
     photoUrl,
+    ...(listingUrl ? { listingUrl } : {}),
     agent: agents[0],
-    features,
+    features: compactPreview ? features.slice(0, 12) : features,
     createdAt: firstString(value.createDate),
     updatedAt: firstString(value.lastChangeDate, value.LastUpdate),
   };
@@ -277,7 +312,7 @@ function compact<T>(values: unknown[], normalize: (value: unknown) => T | undefi
   return result;
 }
 
-function normalizeLead(value: unknown, index: number): LeadView | undefined {
+export function normalizeLeadView(value: unknown, index = 0, compactPreview = true): LeadView | undefined {
   if (!isRecord(value)) return undefined;
   const id = firstString(value.Id, value.LeadID, value.LeadId);
   if (!id) return undefined;
@@ -291,18 +326,12 @@ function normalizeLead(value: unknown, index: number): LeadView | undefined {
         language: firstString(customer.Language),
       }
     : undefined;
-  const agents = compact(
-    Array.isArray(value.Agents) ? value.Agents.slice(0, 5) : [],
-    normalizeAgent
-  );
-  const properties = compact(
-    Array.isArray(value.Properties) ? value.Properties.slice(0, 5) : [],
-    normalizeProperty
-  );
-  const events = compact(
-    Array.isArray(value.Events) ? value.Events.slice(0, 5) : [],
-    normalizeEvent
-  );
+  const agentSource = Array.isArray(value.Agents) ? value.Agents : [];
+  const propertySource = Array.isArray(value.Properties) ? value.Properties : [];
+  const eventSource = Array.isArray(value.Events) ? value.Events : [];
+  const agents = compact(compactPreview ? agentSource.slice(0, 5) : agentSource, normalizeAgent);
+  const properties = compact(compactPreview ? propertySource.slice(0, 5) : propertySource, normalizeProperty);
+  const events = compact(compactPreview ? eventSource.slice(0, 5) : eventSource, normalizeEvent);
 
   return {
     id,
@@ -337,7 +366,7 @@ export function normalizeLeadListToolOutput(output: unknown): LeadListView | und
   const opportunities = sourceLeads.slice(0, 100);
   const leads: LeadView[] = [];
   for (const [index, opportunity] of opportunities.entries()) {
-    const lead = normalizeLead(opportunity, index);
+    const lead = normalizeLeadView(opportunity, index);
     if (lead) leads.push(lead);
   }
   const metadata = isRecord(parsed._result) ? parsed._result : {};
@@ -371,7 +400,7 @@ export function normalizePropertyListToolOutput(
   if (!sourceProperties) return undefined;
   const properties: PropertyView[] = [];
   for (const [index, propertyValue] of sourceProperties.slice(0, 100).entries()) {
-    const property = normalizeListedProperty(propertyValue, index);
+    const property = normalizePropertyView(propertyValue, index);
     if (property) properties.push(property);
   }
   const pagination = isRecord(parsed._pagination) ? parsed._pagination : {};
@@ -393,4 +422,29 @@ export function normalizePropertyListToolOutput(
       totalRecords > properties.length,
     generatedAt: new Date().toISOString(),
   };
+}
+
+export function compactEmailDraftView(output: unknown): EmailDraftView[] {
+  const parsed = parseToolOutput(output);
+  const items = Array.isArray(parsed) ? parsed : parsed && isRecord(parsed) ? [parsed] : [];
+  const drafts: EmailDraftView[] = [];
+  for (const item of items) {
+    if (!isRecord(item)) continue;
+    if (typeof item.kind === "string" && item.kind !== "email-draft") continue;
+    if (typeof item.id !== "string" || typeof item.subject !== "string" || typeof item.body !== "string") continue;
+    if (typeof item.revision !== "number" || !Number.isInteger(item.revision) || item.revision < 1) continue;
+    if (typeof item.downloadAttachmentId !== "string") continue;
+    if (item.status !== undefined && item.status !== "draft") continue;
+    const attachmentIds = Array.isArray(item.attachmentIds) ? item.attachmentIds.filter((id): id is string => typeof id === "string") : [];
+    drafts.push({
+      id: item.id,
+      revision: item.revision,
+      ...(typeof item.recipient === "string" && item.recipient.trim() ? { recipient: item.recipient } : {}),
+      subject: item.subject,
+      body: item.body,
+      downloadAttachmentId: item.downloadAttachmentId,
+      attachmentIds,
+    });
+  }
+  return drafts;
 }

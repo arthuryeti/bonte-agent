@@ -13,6 +13,7 @@ export interface LeadAgentView {
 export interface LeadPropertyView {
   id?: string;
   reference?: string;
+  title?: string;
   address?: string;
   price?: string;
   updatedAt?: string;
@@ -88,6 +89,7 @@ export interface PropertyView {
   description?: string;
   energyRating?: string;
   photoUrl?: string;
+  listingUrl?: string;
   agent?: PropertyAgentView;
   features: string[];
   createdAt?: string;
@@ -101,4 +103,14 @@ export interface PropertyListView {
   returnedRecords: number;
   truncated: boolean;
   generatedAt: string;
+}
+
+export interface EmailDraftView {
+  id: string;
+  revision: number;
+  recipient?: string;
+  subject: string;
+  body: string;
+  downloadAttachmentId: string;
+  attachmentIds: string[];
 }

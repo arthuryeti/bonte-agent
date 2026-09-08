@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { beforeEach, afterEach, test } from "node:test";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import PizZip from "pizzip";
 import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, StandardFonts } from "pdf-lib";
 import { MemoryWorkflowStore, setWorkflowStore } from "../src/workflows/store.js";
-import { attachmentPrompt, deleteAttachment, getAttachment, listAttachments, purgeExpiredAttachments, readAttachment, uploadAttachment, validateDocxArchive, type WorkflowAttachment } from "../src/workflows/documents-attachments.js";
-import { documentCapabilities, generateNdaDraft, loadNdaConfig, ndaConfigSchema, renderNdaDocx, renderNdaPdfForm, saveEmailDraft, updateNdaIntake, validateNdaFacts, type NdaFact } from "../src/workflows/documents.js";
+import { attachmentPrompt, deleteAttachment, getAttachment, listAttachments, purgeExpiredAttachments, readAttachment, saveGeneratedAttachment, uploadAttachment, validateDocxArchive, type WorkflowAttachment } from "../src/workflows/documents-attachments.js";
+import { documentCapabilities, generateNdaDraft, listDocumentDrafts, loadNdaConfig, ndaConfigSchema, renderNdaDocx, renderNdaPdfForm, saveEmailDraft, updateNdaIntake, validateNdaFacts, type NdaFact } from "../src/workflows/documents.js";
+import { ensureTestS3 } from "./s3-harness.js";
 
 const context = { workspaceId: "test-workspace", actorId: "test-workspace", conversationId: "test-conversation" };
 const mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -35,8 +36,9 @@ beforeEach(async () => {
   directory = await mkdtemp(join(tmpdir(), "bonte-document-test-"));
   oldEnv = { ...process.env };
   originalFetch = globalThis.fetch;
-  process.env.BONTE_ATTACHMENT_DIR = join(directory, "private");
+  await ensureTestS3();
   delete process.env.BONTE_NDA_CONFIG_PATH;
+  delete process.env.BONTE_CMI_CONFIG_PATH;
   store = new MemoryWorkflowStore(); setWorkflowStore(store);
 });
 afterEach(async () => {
@@ -76,13 +78,75 @@ test("uploads retain readable document evidence and enforce workspace, actor and
   assert.ok(!prompt.includes("Example Holdings"), "The prompt contains metadata only, not private extracted text.");
 });
 
+
+test("missing S3 configuration is a setup error and does not write local files", async () => {
+  delete process.env.BONTE_S3_BUCKET;
+  await assert.rejects(
+    () => saveGeneratedAttachment(context, { fileName: "note.txt", mimeType: "text/plain; charset=utf-8", bytes: Buffer.from("hi") }),
+    /not configured/,
+  );
+});
 test("invalid file names, spoofed PDFs and expanded DOCX bombs are rejected", async () => {
   await assert.rejects(() => uploadAttachment(context, { fileName: "../party.docx", mimeType: mime, bytes: docx("Safe sample"), category: "party" }), /file name/);
   await assert.rejects(() => uploadAttachment(context, { fileName: "fake.pdf", mimeType: "application/pdf", bytes: Buffer.from("not actually a PDF document"), category: "party" }), /contents/);
+  await assert.rejects(() => uploadAttachment(context, { fileName: "fake.webp", mimeType: "image/webp", bytes: Buffer.from("RIFFxxxxNOTW"), category: "party" }), /contents/);
   const archive = docx("Safe sample");
   const central = archive.indexOf(Buffer.from([0x50, 0x4b, 0x01, 0x02]));
   archive.writeUInt32LE(60 * 1024 * 1024, central + 24);
   assert.throws(() => validateDocxArchive(archive), /Expanded DOCX/);
+});
+
+test("PDF runtime failure is not a blank page and recovers from stored bytes", async () => {
+  const pdf = Buffer.from("%PDF-1.4 test");
+  const missing = join(directory, "missing-tool");
+  process.env.BONTE_PDFINFO_PATH = missing;
+  process.env.BONTE_PDFTOTEXT_PATH = missing;
+  process.env.BONTE_PDFTOPPM_PATH = missing;
+  process.env.BONTE_TESSERACT_PATH = missing;
+  const uploaded = await uploadAttachment(context, { fileName: "documento.pdf", mimeType: "application/pdf", bytes: pdf, category: "other" });
+  assert.equal(uploaded.pages.length, 0);
+  assert.match(uploaded.warnings.join("\n"), /Poppler/);
+  assert.doesNotMatch(uploaded.warnings.join("\n"), /clearer scan|insufficient text/);
+  await store.put(context.workspaceId, "attachment", uploaded.id, {
+    ...uploaded,
+    pages: [{ page: 1, text: "", method: "text", readable: false, locator: "page" }],
+    warnings: ["Text extraction is unavailable or this document is unreadable. Supply a readable document or ask the administrator to check the document runtime."],
+  });
+  const log = join(directory, "tool.log");
+  process.env.TOOL_LOG = log;
+  const script = async (name: string, body: string) => {
+    const file = join(directory, name);
+    await writeFile(file, `#!/usr/bin/env node\n${body}\n`, { mode: 0o755 });
+    await chmod(file, 0o755);
+    return file;
+  };
+  process.env.BONTE_PDFINFO_PATH = await script("pdfinfo", 'require("fs").appendFileSync(process.env.TOOL_LOG, "pdfinfo\\n"); process.stdout.write("Pages:         " + (process.env.FAKE_PDF_PAGES || "2") + "\\n");');
+  process.env.BONTE_PDFTOTEXT_PATH = await script("pdftotext", 'require("fs").appendFileSync(process.env.TOOL_LOG, "pdftotext\\n"); if (process.env.FAKE_PDFTOTEXT === "fail") process.exit(1); process.stdout.write(process.env.FAKE_PDFTOTEXT_TEXT || "");');
+  process.env.BONTE_PDFTOPPM_PATH = await script("pdftoppm", 'require("fs").appendFileSync(process.env.TOOL_LOG, "pdftoppm\\n"); require("fs").writeFileSync(process.argv.at(-1) + ".png", "x");');
+  process.env.BONTE_TESSERACT_PATH = await script("tesseract", 'require("fs").appendFileSync(process.env.TOOL_LOG, "tesseract\\n"); process.stdout.write(process.env.FAKE_OCR_TEXT || "");');
+  process.env.FAKE_PDFTOTEXT = "fail";
+  process.env.FAKE_OCR_TEXT = "Recovered source text from scan.";
+  const skipped = await getAttachment(context, uploaded.id);
+  assert.equal(skipped.pages.length, 1);
+  assert.equal(skipped.pages[0].text, "");
+  const recovered = await getAttachment(context, uploaded.id, true);
+  assert.equal(recovered.pages.length, 2);
+  assert.ok(recovered.pages.every((page) => page.method === "ocr" && page.readable));
+  assert.match(recovered.pages.map((page) => page.text).join(" "), /Recovered source text from scan/);
+  assert.doesNotMatch(recovered.warnings.join("\n"), /administrator to install|Text extraction is unavailable|clearer scan/);
+  process.env.FAKE_PDF_PAGES = "1";
+  delete process.env.FAKE_PDFTOTEXT;
+  process.env.FAKE_PDFTOTEXT_TEXT = "";
+  process.env.FAKE_OCR_TEXT = "";
+  await writeFile(log, "");
+  const blank = await uploadAttachment(context, { fileName: "blank.pdf", mimeType: "application/pdf", bytes: pdf, category: "other" });
+  assert.equal(blank.pages.length, 1);
+  assert.equal(blank.pages[0].readable, false);
+  assert.match(blank.warnings.join("\n"), /insufficient text/);
+  assert.doesNotMatch(blank.warnings.join("\n"), /administrator to install|Text extraction is unavailable/);
+  const before = await readFile(log, "utf8");
+  await getAttachment(context, blank.id, true);
+  assert.equal(await readFile(log, "utf8"), before);
 });
 
 test("deletion and retention remove document bytes and extracted evidence", async () => {
@@ -270,6 +334,8 @@ test("email revisions retain recipient and attachments, preserve previous versio
   const originalFile = await readAttachment(context, original.downloadAttachmentId);
   assert.match(originalFile.bytes.toString(), /Thank you for your enquiry\./);
   await assert.rejects(() => saveEmailDraft({ ...context, workspaceId: "another-workspace" }, { previousDraftId: original.id, body: "Attempt" }), /not found/);
+  await assert.rejects(() => saveEmailDraft(context, { recipient: "buyer@example.invalid\nBcc: hidden", subject: "Your enquiry", body: "Thanks" }), /control characters/);
+  await assert.rejects(() => saveEmailDraft(context, { recipient: "buyer@example.invalid", subject: "Your enquiry\tBcc: hidden", body: "Thanks" }), /control characters/);
 });
 
 test("property email uses exact identity, verified URLs and keeps source snapshots across edits", async () => {
@@ -281,4 +347,153 @@ test("property email uses exact identity, verified URLs and keeps source snapsho
   await assert.rejects(() => saveEmailDraft(context, { previousDraftId: draft.id, body: "Here is a completely different house." }), /exact reference/);
   const revised = await saveEmailDraft(context, { previousDraftId: draft.id, body: "I thought TEST123 would suit your plans: https://example.invalid/listing/verified" });
   assert.deepEqual(revised.properties, draft.properties);
+});
+
+const cmiSale = {
+  agreement_date: "7/9/2026", contract_number: "001", client_name: "João Silva", marital_status: "Solteiro",
+  client_address: "Rua Azul, 1", client_city: "Lisboa", client_id: "12345678", client_tax_id: "123456789",
+  client_capacity: "Proprietário", property_use: "Habitação", rooms: "4", area: "120", property_address: "Rua de Teste, 25",
+  property_city: "Cascais", property_parish: "Cascais", property_municipality: "Cascais", registry_office: "Cascais",
+  registry_number: "1234", license_number: "123/2001", license_municipality: "Cascais", license_date: "1/1/2001",
+  tax_article: "1234", tax_parish: "Cascais", energy_certificate: "SCE123456", energy_expiry: "1/1/2036",
+  business_type: "Compra", price: "500.000,00", price_words_pt: "quinhentos", price_words_pt_continued: "mil euros",
+  price_words_en: "five hundred", price_words_en_continued: "thousand euros", liens_pt: "Nenhum", liens_en: "None", liens_amount: "0",
+  exclusivity: "Exclusivo", fee_type: "Percentagem", fee_percentage: "5", fee_percentage_vat: "23",
+  payment_terms: "Repartido", payment_initial_percentage: "50", payment_remaining_percentage: "50",
+  agent_name: "Ana Martins", agent_id: "87654321", agent_tax_id: "987654321",
+};
+
+async function cmiEvidence(ctx = context, values: Record<string, string> = cmiSale) {
+  const loaded = (await loadNdaConfig("cmi"))!;
+  const sources = new Map<string, WorkflowAttachment>();
+  for (const category of ["party", "transaction"] as const) {
+    const text = loaded.config.fields.filter((field) => field.source === category && values[field.key])
+      .map((field) => `${field.label}: ${values[field.key]}`).join("; ");
+    sources.set(category, await uploadAttachment(ctx, { fileName: `FICTIONAL-CMI-${category}.docx`, mimeType: mime, category,
+      bytes: docx(`FICTIONAL TEST DATA ONLY. ${text}`) }));
+  }
+  const facts: NdaFact[] = Object.entries(values).map(([key, value]) => {
+    const field = loaded.config.fields.find((field) => field.key === key)!;
+    const attachment = sources.get(field.source);
+    return { key, value, source: attachment ? { type: "document", attachmentId: attachment.id, page: 1, quote: attachment.pages[0].text }
+      : { type: "agreement", userStatement: `For this fictional test, use ${value}.` } };
+  });
+  return { ...loaded, sources, facts };
+}
+
+test("exact CMI: sale and lease from uploaded evidence, linked bilingual fields, edit/reopen and revisions", async () => {
+  const lease: Record<string, string> = { ...cmiSale, contract_number: "002", client_name: "José Silva", marital_status: "Casado",
+    property_regime: "Separação", spouse_name: "Ana", spouse_name_continued: "Silva", spouse_id: "23456789", spouse_tax_id: "234567890",
+    client_capacity: "Senhorio", business_type: "Arrendamento", price: "2.000,00", price_words_pt: "dois mil euros",
+    price_words_en: "two thousand", price_words_en_continued: "euros", exclusivity: "Não exclusivo", fee_type: "Montante fixo",
+    fee_amount: "2.000,00", fee_words_pt: "dois mil euros", fee_words_en: "two", fee_words_en_continued: "thousand euros", fee_amount_vat: "23",
+    payment_terms: "Escritura" };
+  for (const key of ["fee_percentage", "fee_percentage_vat", "payment_initial_percentage", "payment_remaining_percentage", "price_words_pt_continued"]) delete lease[key];
+  const exportDir = process.env.BONTE_CMI_TEST_OUTPUT_DIR;
+  const content = (pdf: PDFDocument, page: number) => {
+    const streams = pdf.getPage(page).node.Contents();
+    const items = streams instanceof PDFArray ? streams.asArray().map((ref) => pdf.context.lookup(ref, PDFRawStream)) : [streams as PDFRawStream];
+    return Buffer.concat(items.map((stream) => Buffer.from(decodePDFRawStream(stream).decode())));
+  };
+  for (const [index, values] of [cmiSale, lease].entries()) {
+    const ctx = { ...context, conversationId: `cmi-example-${index}` };
+    const { config: templateConfig, template, facts } = await cmiEvidence(ctx, values);
+    const check = await updateNdaIntake(ctx, { facts }, "cmi");
+    assert.equal(check.status, "ready_to_draft", JSON.stringify(check.issues));
+    assert.equal((await updateNdaIntake(ctx)).status, "needs_input", "CMI and NDA intakes must be isolated.");
+    const draft = await generateNdaDraft(ctx, "cmi");
+    assert.ok("downloads" in draft);
+    assert.equal(draft.pageCount, 10);
+    assert.equal(draft.revision, 1);
+    assert.equal(draft.downloads.length, 1);
+    const { bytes } = await readAttachment(ctx, draft.pdfAttachmentId);
+    const output = await PDFDocument.load(bytes);
+    const original = await PDFDocument.load(template);
+    const form = output.getForm();
+    assert.equal(original.getForm().getFields().length, 0);
+    for (const field of templateConfig.fields) {
+      const value = (values as Record<string, string>)[field.key] ?? "";
+      const saved = field.pdf!.option ? form.getRadioGroup(field.key) : form.getTextField(field.key);
+      assert.equal(saved.isReadOnly(), false);
+      if (field.pdf!.option) {
+        const group = form.getRadioGroup(field.key);
+        assert.equal(group.getSelected(), value);
+        assert.equal(group.acroField.getWidgets().filter((widget) => widget.getAppearanceState()?.toString() !== "/Off").length, 2, "Both language markers select together.");
+      } else {
+        assert.equal(form.getTextField(field.key).getText() ?? "", value);
+        for (const [i, box] of [field.pdf!, ...(field.pdfCopies ?? [])].entries()) if (box.valueMap) {
+          assert.equal(form.getTextField(`${field.key}_translation_${i}`).getText() ?? "", value ? box.valueMap[value] : "");
+        }
+      }
+      for (const widget of saved.acroField.getWidgets()) assert.ok(widget.getNormalAppearance());
+    }
+    for (let p = 0; p < 10; p++) {
+      assert.deepEqual(output.getPage(p).getSize(), original.getPage(p).getSize());
+      assert.ok(content(output, p).includes(content(original, p)), `Original CMI page ${p + 1} content must remain intact.`);
+    }
+    assert.equal(output.getPage(9).node.Annots()?.size() ?? 0, 0, "Signature page stays untouched.");
+    assert.equal((await listDocumentDrafts(ctx)).filter((item) => item.kind === "cmi-draft").length, 1);
+    assert.equal((await listDocumentDrafts({ ...ctx, actorId: "other" })).length, 0);
+    if (exportDir) {
+      await mkdir(exportDir, { recursive: true });
+      await writeFile(join(exportDir, `cmi-test-${index + 1}.pdf`), bytes);
+    }
+    if (index === 0) {
+      form.getTextField("client_name").setText("Maria Simões");
+      form.getRadioGroup("exclusivity").select("Não exclusivo");
+      form.updateFieldAppearances(await output.embedFont(StandardFonts.Helvetica));
+      const edited = Buffer.from(await output.save());
+      const reopened = (await PDFDocument.load(edited)).getForm();
+      assert.equal(reopened.getTextField("client_name").getText(), "Maria Simões");
+      assert.equal(reopened.getTextField("client_name").acroField.getWidgets().length, 3);
+      assert.equal(reopened.getRadioGroup("exclusivity").getSelected(), "Não exclusivo");
+      if (exportDir) await writeFile(join(exportDir, "cmi-test-edited.pdf"), edited);
+      const change: NdaFact = { key: "agreement_date", value: "8/9/2026", source: { type: "agreement", userStatement: "Change date to 8/9/2026." } };
+      assert.equal((await updateNdaIntake(ctx, { facts: [change] }, "cmi")).status, "needs_input");
+      assert.equal((await updateNdaIntake(ctx, { facts: [change], resolveFields: [change.key] }, "cmi")).status, "ready_to_draft");
+      const revised = await generateNdaDraft(ctx, "cmi");
+      assert.ok("downloads" in revised);
+      assert.equal(revised.revision, 2);
+      assert.equal((await PDFDocument.load((await readAttachment(ctx, revised.pdfAttachmentId)).bytes)).getForm().getTextField("agreement_date").getText(), "8/9/2026");
+      assert.equal((await PDFDocument.load((await readAttachment(ctx, draft.pdfAttachmentId)).bytes)).getForm().getTextField("agreement_date").getText(), "7/9/2026");
+    }
+  }
+});
+
+test("CMI blocks missing/conflicting evidence, inapplicable fees, bad dates/payments and overflow without publishing", async () => {
+  assert.equal((await generateNdaDraft(context, "cmi")).status, "needs_input");
+  const { config: templateConfig, template, sources, facts } = await cmiEvidence();
+  const property = sources.get("transaction")!;
+  const bad = structuredClone(facts); bad.find((fact) => fact.key === "energy_certificate")!.value = "invented";
+  assert.match(validateNdaFacts(templateConfig, bad, [...sources.values()]).join(" "), /not supported/);
+  assert.match(validateNdaFacts(templateConfig, facts, [sources.get("party")!]).join(" "), /readable.*transaction|readable.*property/);
+  const incomplete = facts.filter((fact) => fact.key !== "energy_certificate");
+  assert.match(validateNdaFacts(templateConfig, incomplete, [...sources.values()]).join(" "), /Missing Número do certificado/);
+  const invalidTerms: NdaFact[] = [
+    { key: "agreement_date", value: "31/2/2026", source: { type: "agreement", userStatement: "31/2/2026" } },
+    { key: "payment_remaining_percentage", value: "60", source: { type: "agreement", userStatement: "60" } },
+    { key: "fee_amount", value: "2000", source: { type: "agreement", userStatement: "2000" } },
+  ];
+  const check = await updateNdaIntake(context, { facts: [...facts.filter((fact) => !invalidTerms.some((term) => term.key === fact.key)), ...invalidTerms] }, "cmi");
+  assert.match(check.issues!.join(" "), /real D\/M\/YYYY/);
+  assert.match(check.issues!.join(" "), /total 100%/);
+  assert.match(check.issues!.join(" "), /does not apply/);
+  const overflow = "Avenida de um Nome Demasiado Comprido, 123, 4.º Esq.";
+  const party = sources.get("party")!;
+  await store.put(context.workspaceId, "attachment", party.id, { ...party, pages: [{ ...party.pages[0], text: `${party.pages[0].text}; ${overflow}` }] });
+  const longFacts = facts.map((fact) => fact.key === "client_address" ? { ...fact, value: overflow, source: { type: "document" as const, attachmentId: party.id, page: 1, quote: overflow } } : fact);
+  assert.equal((await updateNdaIntake(context, { facts: longFacts, resolveFields: [...new Set([...facts, ...invalidTerms].map((fact) => fact.key))] }, "cmi")).status, "ready_to_draft");
+  await assert.rejects(() => generateNdaDraft(context, "cmi"), /Morada do cliente.*not clipped/);
+  await assert.rejects(() => renderNdaPdfForm(template, templateConfig, facts.map((fact) => fact.key === "client_name" ? { ...fact, value: "测试" } : fact)), /cannot display/);
+  assert.equal((await listAttachments(context)).filter((file) => file.generated).length, 0);
+  assert.equal((await store.list(context.workspaceId, "cmi-draft")).length, 0);
+  await writeFile(join(directory, "changed-cmi.json"), JSON.stringify({ ...templateConfig, templatePath: join(directory, "changed-cmi.pdf"), templateSha256: "0".repeat(64) }));
+  await writeFile(join(directory, "changed-cmi.pdf"), template);
+  process.env.BONTE_CMI_CONFIG_PATH = join(directory, "changed-cmi.json");
+  await assert.rejects(() => loadNdaConfig("cmi"), /checksum/);
+  await store.put(context.workspaceId, "cmi-intake", context.conversationId, { expiresAt: "2000-01-01T00:00:00Z", facts });
+  await store.put(context.workspaceId, "cmi-draft", "expired", { expiresAt: "2000-01-01T00:00:00Z", sourceAttachmentIds: [property.id] });
+  await purgeExpiredAttachments(context.workspaceId);
+  assert.equal(await store.get(context.workspaceId, "cmi-intake", context.conversationId), null);
+  assert.equal(await store.get(context.workspaceId, "cmi-draft", "expired"), null);
 });

@@ -21,7 +21,7 @@ export interface ChatMessage {
 }
 
 export interface ChatMessageDataPart {
-  type: "lead-list" | "property-list" | "attachment" | "source-document";
+  type: "lead-list" | "property-list" | "attachment" | "source-document" | "email-draft";
   id: string;
   data: unknown;
 }
@@ -88,7 +88,9 @@ function asDataParts(value: unknown): ChatMessageDataPart[] | undefined {
     return (
       (record.type === "lead-list" ||
         record.type === "property-list" ||
-        record.type === "attachment" || record.type === "source-document") &&
+        record.type === "attachment" ||
+        record.type === "source-document" ||
+        record.type === "email-draft") &&
       typeof record.id === "string" &&
       "data" in record
     );
@@ -379,29 +381,72 @@ export class SessionStore {
     return (await this.getSession(platform, chatId)).messages;
   }
 
-  /** Exact, server-written assistant attachment metadata proves legacy ownership. */
-  async findLegacyBrochureAttachment(workspaceId: string, fileName: string): Promise<{ chatId: string; timestamp: Date } | undefined> {
-    if (!/^[a-zA-Z0-9-]{1,128}$/.test(workspaceId) || !/^property-[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$/.test(fileName)) return undefined;
-    const prefix = `${workspaceId}_`;
+  async listLegacyBrochureProofs(): Promise<Array<{ workspaceId: string; fileName: string; chatId: string; timestamp: Date }>> {
+    const proofs: Array<{ workspaceId: string; fileName: string; chatId: string; timestamp: Date }> = [];
+    const days = Number(process.env.BONTE_ATTACHMENT_RETENTION_DAYS ?? 30);
+    const retentionDays = Number.isFinite(days) && days >= 1 && days <= 365 ? days : 30;
+    const window = retentionDays * 86_400_000;
+    const now = Date.now();
+    const consider = (workspaceId: string, fileName: string, chatId: string, timestamp: Date) => {
+      if (!/^[a-zA-Z0-9-]{1,128}$/.test(workspaceId) || !/^property-[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$/.test(fileName) || !chatId.startsWith(`${workspaceId}_`)) return;
+      const t = timestamp.getTime();
+      if (!Number.isFinite(t) || t > now || t + window <= now) return;
+      proofs.push({ workspaceId, fileName, chatId, timestamp });
+    };
     if (this.pool) {
-      const result = await this.pool.query<{ chat_id: string; created_at: Date }>(
-        `SELECT chat_id, created_at FROM gateway_messages
-         WHERE platform = 'web' AND role = 'assistant'
-           AND LEFT(chat_id, LENGTH($1)) = $1
-           AND EXISTS (SELECT 1 FROM jsonb_array_elements(data_parts) AS part
-             WHERE part->>'type' = 'attachment' AND part->>'id' = $2
-               AND part->'data'->>'fileName' = $2
-               AND part->'data'->>'mimeType' = 'application/pdf')
-         ORDER BY created_at ASC LIMIT 1`, [prefix, fileName]);
-      const row = result.rows[0];
-      return row ? { chatId: row.chat_id, timestamp: row.created_at } : undefined;
+      let afterWorkspace: string | undefined;
+      let afterFile: string | undefined;
+      for (;;) {
+        const result = await this.pool.query<{ workspace_id: string; file_name: string; chat_id: string; created_at: Date }>(
+          `SELECT DISTINCT ON (substring(chat_id from '^([a-zA-Z0-9-]{1,128})_'), part->>'id')
+             substring(chat_id from '^([a-zA-Z0-9-]{1,128})_') AS workspace_id,
+             part->>'id' AS file_name,
+             chat_id,
+             created_at
+           FROM gateway_messages, jsonb_array_elements(COALESCE(data_parts, '[]'::jsonb)) AS part
+           WHERE platform = 'web' AND role = 'assistant'
+             AND chat_id ~ '^[a-zA-Z0-9-]{1,128}_'
+             AND part->>'type' = 'attachment'
+             AND part->>'id' = part->'data'->>'fileName'
+             AND part->'data'->>'mimeType' = 'application/pdf'
+             AND part->>'id' ~ '^property-[A-Za-z0-9][A-Za-z0-9._-]*\\.pdf$'
+             AND created_at <= NOW()
+             AND created_at > NOW() - ($1::int * INTERVAL '1 day')
+             AND ($2::text IS NULL OR (substring(chat_id from '^([a-zA-Z0-9-]{1,128})_'), part->>'id') > ($2, $3))
+           ORDER BY substring(chat_id from '^([a-zA-Z0-9-]{1,128})_'), part->>'id', created_at ASC
+           LIMIT 500`,
+          [retentionDays, afterWorkspace ?? null, afterFile ?? null],
+        );
+        if (!result.rows.length) break;
+        for (const row of result.rows) consider(row.workspace_id, row.file_name, row.chat_id, row.created_at);
+        const last = result.rows[result.rows.length - 1];
+        afterWorkspace = last.workspace_id;
+        afterFile = last.file_name;
+      }
+      return proofs;
     }
-    return [...this.sessions.values()].filter((session) => session.platform === "web" && session.chatId.startsWith(prefix))
-      .flatMap((session) => session.messages.filter((message) => message.role === "assistant" && message.dataParts?.some((part) => {
-        const data = part.data as { fileName?: unknown; mimeType?: unknown } | null;
-        return part.type === "attachment" && part.id === fileName && data?.fileName === fileName && data.mimeType === "application/pdf";
-      })).map((message) => ({ chatId: session.chatId, timestamp: message.timestamp })))
-      .sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime())[0];
+    const oldest = new Map<string, { workspaceId: string; fileName: string; chatId: string; timestamp: Date }>();
+    for (const session of this.sessions.values()) {
+      if (session.platform !== "web") continue;
+      const cut = session.chatId.indexOf("_");
+      if (cut < 1) continue;
+      const workspaceId = session.chatId.slice(0, cut);
+      for (const message of session.messages) {
+        if (message.role !== "assistant") continue;
+        for (const part of message.dataParts ?? []) {
+          const data = part.data;
+          if (part.type !== "attachment" || !data || typeof data !== "object") continue;
+          const fileName = "fileName" in data ? String(data.fileName) : "";
+          const mimeType = "mimeType" in data ? String(data.mimeType) : "";
+          if (part.id !== fileName || mimeType !== "application/pdf") continue;
+          const key = `${workspaceId}\0${fileName}`;
+          const prev = oldest.get(key);
+          if (!prev || message.timestamp.getTime() < prev.timestamp.getTime()) oldest.set(key, { workspaceId, fileName, chatId: session.chatId, timestamp: message.timestamp });
+        }
+      }
+    }
+    for (const proof of oldest.values()) consider(proof.workspaceId, proof.fileName, proof.chatId, proof.timestamp);
+    return proofs;
   }
 
   async hasMessage(

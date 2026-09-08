@@ -1,6 +1,4 @@
 import "dotenv/config";
-import { unlink } from "node:fs/promises";
-import path from "node:path";
 import { createCrmAgent } from "./agent.js";
 import { Gateway } from "./gateway/gateway.js";
 import { WebAdapter } from "./gateway/platforms/web.js";
@@ -11,7 +9,7 @@ import { logAiEvent } from "./observability.js";
 import { initializeWorkflowStore } from "./workflows/store.js";
 import { WorkflowWorker } from "./workflows/tasks.js";
 import { fetchAllLeads, queryLeads, auditLeads } from "./workflows/crm-leads.js";
-import { purgeExpiredAttachments } from "./workflows/documents-attachments.js";
+import { deleteAttachmentBytes } from "./workflows/documents-attachments.js";
 
 /**
  * Gateway server entry point.
@@ -125,14 +123,23 @@ async function main() {
       findings: report.attentionCandidates.map(f => ({leadId:f.leadId,classification:f.classification,reason:f.reason,status:f.status})).sort((a,b)=>String(a.leadId).localeCompare(String(b.leadId))) };
   }, async () => {
     const now = new Date().toISOString();
-    const expired = (await Promise.all(["attachment", "nda-intake", "nda-draft", "email-draft"].map(kind => workflowStore.expired(kind, now, 100)))).flat();
-    for (const scope of new Set(expired.map(row => row.workspaceId))) await purgeExpiredAttachments(scope);
-    for (const kind of ["audit_run", "notification", "generated_file"]) {
-      for (const row of await workflowStore.expired(kind, now, 100)) {
-        if (kind === "generated_file" && path.basename(row.id) === row.id) {
-          await unlink(path.resolve("output/pdf", row.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
+    for (const kind of ["attachment", "nda-intake", "nda-draft", "cmi-intake", "cmi-draft", "email-draft", "audit_run", "notification", "generated_file"]) {
+      let after: { expiresAt: string; workspaceId: string; id: string } | undefined;
+      for (;;) {
+        const batch = await workflowStore.expired(kind, now, 100, after);
+        if (!batch.length) break;
+        const last = batch[batch.length - 1];
+        const data = last.data;
+        const expiresAt = data && typeof data === "object" && "expiresAt" in data ? String(data.expiresAt) : now;
+        after = { expiresAt, workspaceId: last.workspaceId, id: last.id };
+        for (const row of batch) {
+          const expires = Date.parse(String(row.data && typeof row.data === "object" && "expiresAt" in row.data ? row.data.expiresAt : ""));
+          if (!Number.isFinite(expires) || expires > Date.now()) continue;
+          try {
+            if (kind === "attachment") await deleteAttachmentBytes(row.workspaceId, row.id);
+            await workflowStore.remove(row.workspaceId, kind, row.id);
+          } catch { /* retain locators when S3 delete fails so the next tick retries without starving later rows */ }
         }
-        await workflowStore.remove(row.workspaceId, kind, row.id);
       }
     }
   });

@@ -8,6 +8,7 @@ import type { GatewayEvent } from "./gateway-client";
 export const CRM_TOOL_NAME = "call_crm_api";
 export const SPECIALIST_TOOL_NAME = "task";
 export const PROPERTY_PDF_TOOL_NAME = "generate_property_pdf";
+export const MARKET_RESEARCH_TOOL_NAME = "research_property_market";
 
 const LEAD_LIST_ENDPOINT = "/api/Leads/List";
 const PROPERTY_LIST_ENDPOINT = "/api/Property/ListProperties";
@@ -41,6 +42,7 @@ export function payloadString(event: GatewayEvent, key: string): string {
 }
 
 function toolStartLabel(toolName: string, endpoint: string): string {
+  if (toolName === MARKET_RESEARCH_TOOL_NAME) return "Finding comparable properties…";
   if (toolName === SPECIALIST_TOOL_NAME) return "Specialist agent is working…";
   if (toolName === PROPERTY_PDF_TOOL_NAME) return "Preparing the property document…";
   if (endpoint === LEAD_LIST_ENDPOINT) return "Fetching latest leads…";
@@ -49,6 +51,11 @@ function toolStartLabel(toolName: string, endpoint: string): string {
 }
 
 function toolErrorLabel(toolName: string, message: string): string {
+  if (toolName === MARKET_RESEARCH_TOOL_NAME) {
+    if (/RAPIDAPI_KEY|subscription|401|403/i.test(message)) return "Idealista access needs a configured RapidAPI key and subscription.";
+    if (/429|quota|rate limit/i.test(message)) return "The Idealista API usage limit was reached. Try again later.";
+    return "Market research could not be completed. Review the assistant's explanation.";
+  }
   if (toolName === SPECIALIST_TOOL_NAME) {
     return "The specialist agent could not complete its analysis.";
   }
@@ -68,6 +75,7 @@ function isVisibleTool(toolName: string): boolean {
   return (
     toolName === CRM_TOOL_NAME ||
     toolName === SPECIALIST_TOOL_NAME ||
+    toolName === MARKET_RESEARCH_TOOL_NAME ||
     toolName === PROPERTY_PDF_TOOL_NAME
   );
 }
@@ -184,7 +192,7 @@ function leadListMentionScore(content: string, data: LeadListView): number {
       ? lead.agents.flatMap((agent) => [agent.id, agent.name])
       : []),
     ...(Array.isArray(lead.properties)
-      ? lead.properties.flatMap((property) => [property.id, property.reference])
+      ? lead.properties.flatMap((property) => [property.id, property.reference, property.title])
       : []),
   ]), 0);
 }
@@ -224,7 +232,7 @@ function selectMostRelevantPart(
   return selected;
 }
 
-/** Keep at most one clearly relevant result card of each type. */
+/** Keep at most one relevant CRM card per type, and every saved draft revision. */
 export function selectRelevantDataParts(
   parts: GatewayHistoryDataPart[] = [],
   content: string,
@@ -232,6 +240,7 @@ export function selectRelevantDataParts(
   const selected = [
     selectMostRelevantPart(parts, content, "lead-list"),
     selectMostRelevantPart(parts, content, "property-list"),
+    ...parts.filter((part) => part.type === "email-draft"),
   ];
   return selected.filter((part): part is GatewayHistoryDataPart => Boolean(part));
 }

@@ -21,13 +21,14 @@ async function main() {
   const sourceUrl = process.env.CRM_LISTING_SOURCE_URL?.trim();
   const allowedHosts = (process.env.CRM_LISTING_ALLOWED_HOSTS ?? "").split(",").map((host) => host.trim()).filter(Boolean);
   if (!sourceUrl || !allowedHosts.length) throw new Error("Configure CRM_LISTING_SOURCE_URL and CRM_LISTING_ALLOWED_HOSTS before running listing sync.");
-  const maxPages = Number(process.env.CRM_LISTING_SYNC_MAX_PAGES ?? 1000);
+  const maxPages = Number(process.env.CRM_LISTING_SYNC_MAX_PAGES?.trim() || 1000);
   if (!Number.isInteger(maxPages) || maxPages < 1 || maxPages > 10_000) throw new Error("CRM_LISTING_SYNC_MAX_PAGES must be an integer from 1 to 10000.");
   const inventory = await searchProperties({ criteria: {}, complete: true, pageSize: 100, maxPages: 100 });
   if (!inventory.coverage.complete) throw new Error("CRM inventory coverage is incomplete; existing listing mapping was not replaced.");
   const result = await buildVerifiedListingMappings({ sourceUrl, allowedHosts, maxPages }, inventory.properties);
+  if (result.coverage.truncated) throw new Error(`Listing source or page limit reached (checked ${result.coverage.checkedPages} of ${result.coverage.candidatePages} candidates from ${result.coverage.sourceDocuments} source documents); existing mapping was not replaced.`);
   if (!result.mappings.length) throw new Error(`No listing pages passed exact identity verification (${result.rejected.length} rejected); existing mapping was not replaced.`);
-  const outputPath = resolve(process.env.CRM_LISTING_URLS_PATH ?? "output/verified-listing-links.json");
+  const outputPath = resolve(process.env.CRM_LISTING_URLS_PATH?.trim() || "output/verified-listing-links.json");
   await writeVerifiedListingMappings(outputPath, result.mappings);
   console.log(JSON.stringify({ outputPath, verifiedMappings: result.mappings.length, rejectedPages: result.rejected.length, coverage: result.coverage, warnings: result.warnings,
     nextStep: "Set CRM_LISTING_URLS_PATH to this file in the deployed application. Re-run after website inventory changes." }, null, 2));

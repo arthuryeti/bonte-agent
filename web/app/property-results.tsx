@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import type { PropertyListView, PropertyView } from "./chat-types";
+import { useCrmDetails } from "./crm-details";
 
 interface PropertyResultsProps {
   data: PropertyListView;
@@ -9,10 +10,8 @@ interface PropertyResultsProps {
 }
 
 interface PropertyDrawerProps {
-  property: PropertyView;
-  disabled: boolean;
+  identity: { id?: string; reference?: string };
   onClose: () => void;
-  onRefresh: (property: PropertyView) => void;
 }
 
 const PROPERTY_PREVIEW_LIMIT = 3;
@@ -95,7 +94,7 @@ export function PropertyResults({ data, onSelect }: PropertyResultsProps) {
         <span className="lead-results-total">
           {data.totalRecords > data.returnedRecords
             ? `${data.totalRecords.toLocaleString("en-GB")} total`
-            : "Live"}
+            : "Saved result"}
         </span>
       </div>
 
@@ -111,14 +110,15 @@ export function PropertyResults({ data, onSelect }: PropertyResultsProps) {
               key={property.id}
               type="button"
               onClick={() => onSelect(property)}
-              aria-label={`View property ${property.reference}`}
+              aria-label={`View property ${property.title || property.reference}${property.title && property.title !== property.reference ? ` (${property.reference})` : ""}`}
             >
               <span className="lead-primary">
                 <span className="lead-name-line">
-                  <strong>{property.reference}</strong>
+                  <strong>{property.title || property.reference}</strong>
                   {status ? <span className="status-pill">{status}</span> : null}
                 </span>
                 <span className="lead-meta">
+                  {property.title && property.title !== property.reference ? <span>{property.reference}</span> : null}
                   {propertyMeta(property).map((item, index) => (
                     <span key={`${item}-${index}`}>{item}</span>
                   ))}
@@ -155,27 +155,32 @@ export function PropertyResults({ data, onSelect }: PropertyResultsProps) {
 }
 
 export function PropertyDrawer({
-  property,
-  disabled,
+  identity,
   onClose,
-  onRefresh,
 }: PropertyDrawerProps) {
+  const { data, loading, error, refresh } = useCrmDetails("property", identity.id, identity.reference);
+  const property = data?.property;
   const [copied, setCopied] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
-  const price = property.priceVisible === false
+  const price = !property || property.priceVisible === false
     ? undefined
     : formatPrice(property.price, property.currency);
 
   useEffect(() => {
+    const trigger = document.activeElement as HTMLElement | null;
     closeRef.current?.focus();
     const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      if (trigger?.isConnected) trigger.focus();
+    };
   }, [onClose]);
 
   const copyPropertyId = async () => {
+    if (!property) return;
     try {
       await navigator.clipboard.writeText(property.id);
       setCopied(true);
@@ -203,8 +208,8 @@ export function PropertyDrawer({
             <span className="drawer-avatar" aria-hidden="true">P</span>
             <div>
               <p className="eyebrow">Property details</p>
-              <h2 id="property-drawer-title">{property.reference}</h2>
-              <p>{property.title}</p>
+              <h2 id="property-drawer-title">{property ? property.title || property.reference : "Property details"}</h2>
+              {property ? <p>Reference {property.reference}</p> : null}
             </div>
           </div>
           <button
@@ -219,11 +224,21 @@ export function PropertyDrawer({
         </header>
 
         <div className="drawer-scroll">
+          {loading ? <p role="status">Loading fresh CRM details…</p> : null}
+          {error ? <p role="alert">{error}</p> : null}
+          {data ? <p className="property-updated">Fetched from CRM <time dateTime={data.fetchedAt}>{new Date(data.fetchedAt).toLocaleString("en-GB")}</time></p> : null}
+          {data?.warnings?.map((warning, index) => <p className="empty-copy" key={index}>{warning}</p>)}
+          {property ? <>
           <div className="drawer-summary">
             {propertyStatus(property) ? <span className="status-pill">{propertyStatus(property)}</span> : null}
             {property.businessType ? <span className="plain-pill">{property.businessType}</span> : null}
             {property.propertyType ? <span className="plain-pill">{property.propertyType}</span> : null}
           </div>
+          {property.listingUrl ? (
+            <div className="contact-actions">
+              <a href={property.listingUrl} target="_blank" rel="noopener noreferrer">View on Bontefilipidis</a>
+            </div>
+          ) : <p className="empty-copy">Website listing unavailable</p>}
 
           <section className="drawer-section">
             <div className="section-title">
@@ -282,16 +297,17 @@ export function PropertyDrawer({
           {property.updatedAt ? (
             <p className="property-updated">Updated {formatDate(property.updatedAt)}</p>
           ) : null}
+          </> : null}
         </div>
 
         <footer className="drawer-footer">
           <button
             className="primary-action"
             type="button"
-            onClick={() => onRefresh(property)}
-            disabled={disabled}
+            onClick={refresh}
+            disabled={loading}
           >
-            Fetch latest details from CRM
+            {loading ? "Loading CRM details…" : error ? "Retry" : "Refresh from CRM"}
           </button>
         </footer>
       </aside>

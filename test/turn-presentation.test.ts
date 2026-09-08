@@ -37,6 +37,13 @@ function leadList(
 }
 
 describe("completion-gated turn presentation", () => {
+  it("shows market research progress and distinguishes Idealista setup/quota failures", () => {
+    const status = (type: string, message = "") => temporaryStatusPartForEvent({ type, payload: { tool_name: "research_property_market", run_id: "market-1", message } }, "working");
+    assert.equal(status("tool.start")?.data.label, "Finding comparable properties…");
+    assert.match(status("tool.error", "RAPIDAPI_KEY is missing")!.data.label, /RapidAPI key/);
+    assert.match(status("tool.error", "Idealista request failed (429)")!.data.label, /usage limit/);
+    assert.equal(status("tool.complete")?.data.label, "Preparing the final response…");
+  });
   it("exposes working states without exposing partial text or result cards", () => {
     const workingId = "working-turn-1";
     const specialist = temporaryStatusPartForEvent({

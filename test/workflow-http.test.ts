@@ -1,8 +1,5 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, test } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
 import PizZip from "pizzip";
 import WebSocket from "ws";
 import type { DeepAgent } from "deepagents";
@@ -12,13 +9,12 @@ import { GatewayWebSocketServer } from "../src/gateway/websocket-server.js";
 import { SessionStore } from "../src/gateway/session.js";
 import { MemoryWorkflowStore, setWorkflowStore } from "../src/workflows/store.js";
 import { saveGeneratedAttachment, type WorkflowAttachment } from "../src/workflows/documents-attachments.js";
+import { ensureTestS3 } from "./s3-harness.js";
 
 const scope = "11111111-1111-4111-8111-111111111111";
 const otherScope = "22222222-2222-4222-8222-222222222222";
 const conversation = `${scope}_first-chat`;
 const authHeaders = { authorization: "Bearer document-http-test", "x-workspace-id": scope, "x-actor-id": scope, "x-conversation-id": conversation };
-let temporary: string;
-let previousDir: string | undefined;
 let store: MemoryWorkflowStore;
 let gateway: Gateway;
 let server: GatewayWebSocketServer;
@@ -64,9 +60,7 @@ async function completed(events: WebGatewayEvent[], turnId: string) {
 }
 
 beforeEach(async () => {
-  temporary = await mkdtemp(join(tmpdir(), "bonte-http-test-"));
-  previousDir = process.env.BONTE_ATTACHMENT_DIR;
-  process.env.BONTE_ATTACHMENT_DIR = temporary;
+  await ensureTestS3();
   store = new MemoryWorkflowStore(); setWorkflowStore(store);
   agentInputs = [];
   const agent = { async invoke(input: { messages: Array<{ content: string }> }) {
@@ -82,8 +76,6 @@ beforeEach(async () => {
 afterEach(async () => {
   for (const socket of sockets.splice(0)) socket.terminate();
   await server?.stop(); await gateway?.stop();
-  if (previousDir === undefined) delete process.env.BONTE_ATTACHMENT_DIR; else process.env.BONTE_ATTACHMENT_DIR = previousDir;
-  await rm(temporary, { recursive: true, force: true });
 });
 
 test("HTTP upload/list/download/delete use bearer auth and isolate workspace and conversation data", async () => {
@@ -152,4 +144,71 @@ test("legacy brochure URLs respect protected attachment deletion and expiry", as
   const record = await store.get<WorkflowAttachment>(scope, "attachment", attachment.id); assert.ok(record);
   await store.put(scope, "attachment", attachment.id, { ...record.data, expiresAt: "2000-01-01T00:00:00.000Z" });
   assert.equal((await fetch(`${origin}/files?name=test-brochure.pdf`, { headers: authHeaders })).status, 404);
+});
+
+test("GET /crm validates identifiers and returns a fresh record on the next read", async () => {
+  const originalFetch = globalThis.fetch;
+  let leadTitle = "Lisbon viewing";
+  let propertyTitle = "Resolved villa";
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    if (url.startsWith(origin)) return originalFetch(input, init);
+    if (url.includes("/Leads/List")) {
+      return new Response(JSON.stringify({
+        Opportunities: [{
+          Id: "lead-42",
+          Title: leadTitle,
+          Properties: [
+            { PropertyID: 42, Reference: "LX-100", Title: "Named loft" },
+            { PropertyID: 99, Reference: "NO-NAME" },
+          ],
+          Events: Array.from({ length: 8 }, (_, i) => ({ EventID: `e${i}`, Title: `Event ${i}` })),
+        }],
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    return new Response(JSON.stringify({
+      Success: true,
+      PropertyList: [{
+        id: 99,
+        reference: "NO-NAME",
+        locale: [{ language: "en", title: propertyTitle, description: "<p>Long copy</p>" }],
+        features_list_enum: Array.from({ length: 20 }, (_, i) => `F${i}`),
+      }],
+      TotalPages: 1,
+      TotalRecords: 1,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    assert.equal((await fetch(`${origin}/crm?type=lead&id=lead-42`, { headers: { ...authHeaders, authorization: "Bearer invalid" } })).status, 401);
+    assert.equal((await fetch(`${origin}/crm?type=property&id=property-1`, { headers: authHeaders })).status, 400);
+    assert.equal((await fetch(`${origin}/crm?type=property&id=${Number.MAX_SAFE_INTEGER + 1}`, { headers: authHeaders })).status, 400);
+    assert.equal((await fetch(`${origin}/crm?type=property&reference=${encodeURIComponent("NO-NAME\t")}`, { headers: authHeaders })).status, 400);
+    assert.equal((await fetch(`${origin}/crm?type=property&reference=${"A".repeat(129)}`, { headers: authHeaders })).status, 400);
+    assert.equal((await fetch(`${origin}/crm?type=property`, { headers: authHeaders })).status, 400);
+    assert.equal((await fetch(`${origin}/crm?type=lead&id=missing`, { headers: authHeaders })).status, 404);
+    const leadRes = await fetch(`${origin}/crm?type=lead&id=lead-42`, { headers: authHeaders });
+    assert.equal(leadRes.status, 200);
+    assert.equal(leadRes.headers.get("cache-control"), "private, no-store");
+    const leadBody = await leadRes.json() as { lead: { title: string; properties: Array<{ title?: string }>; events: unknown[] }; fetchedAt: string };
+    assert.equal(leadBody.lead.title, "Lisbon viewing");
+    assert.equal(leadBody.lead.properties[0].title, "Named loft");
+    assert.equal(leadBody.lead.properties[1].title, "Resolved villa");
+    assert.equal(leadBody.lead.events.length, 8);
+    leadTitle = "Updated viewing";
+    propertyTitle = "Updated villa";
+    const leadAgain = await fetch(`${origin}/crm?type=lead&id=lead-42`, { headers: authHeaders });
+    assert.equal(((await leadAgain.json()) as { lead: { title: string } }).lead.title, "Updated viewing");
+    const propRes = await fetch(`${origin}/crm?type=property&id=99&reference=NO-NAME`, { headers: authHeaders });
+    assert.equal(propRes.status, 200);
+    const propBody = await propRes.json() as { property: { title: string; features: string[]; description?: string; listingUrl?: string }; warnings?: string[] };
+    assert.equal(propBody.property.title, "Updated villa");
+    assert.equal(propBody.property.features.length, 20);
+    assert.equal(propBody.property.description, "Long copy");
+    assert.equal(propBody.property.listingUrl, undefined);
+    propertyTitle = "Second villa";
+    const propAgain = await fetch(`${origin}/crm?type=property&id=99&reference=NO-NAME`, { headers: authHeaders });
+    assert.equal(((await propAgain.json()) as { property: { title: string } }).property.title, "Second villa");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

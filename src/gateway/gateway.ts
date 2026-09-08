@@ -11,6 +11,8 @@
 import type { DeepAgent } from "deepagents";
 import { BaseCallbackHandler } from "@langchain/core/callbacks/base";
 import path from "node:path";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { runWithWorkflowContext, workflowContextForMessage } from "../workflows/context.js";
 import type { BasePlatformAdapter } from "./platforms/base.js";
 import { TelegramAdapter } from "./platforms/telegram.js";
@@ -27,10 +29,13 @@ import {
   extractMediaDelivery,
   mimeTypeForMedia,
 } from "../media-delivery.js";
+import { readAttachment } from "../workflows/documents-attachments.js";
 import {
+  compactEmailDraftView,
   extractCrmToolError,
   normalizeLeadListToolOutput,
   normalizePropertyListToolOutput,
+  type EmailDraftView,
   type LeadListView,
   type PropertyListView,
 } from "./crm-ui.js";
@@ -75,6 +80,7 @@ class AgentTraceCallback extends BaseCallbackHandler {
   private documentToolOutputs: unknown[] = [];
   private leadListOutputs: LeadListView[] = [];
   private propertyListOutputs: PropertyListView[] = [];
+  private emailDraftOutputs: EmailDraftView[] = [];
   private toolExecutionStarted = false;
 
   constructor(
@@ -132,6 +138,10 @@ class AgentTraceCallback extends BaseCallbackHandler {
       this.documentToolOutputs.push(output);
     }
 
+    if (toolName === "save_email_draft" || toolName === "list_document_drafts") {
+      this.emailDraftOutputs.push(...compactEmailDraftView(output));
+    }
+
     if (["call_crm_api", "search_crm_properties", "get_verified_property", "query_crm_leads", "match_crm_properties_to_buyer", "match_saved_buyer"].includes(toolName)) {
       const leadList = normalizeLeadListToolOutput(output);
       if (leadList) {
@@ -176,6 +186,12 @@ class AgentTraceCallback extends BaseCallbackHandler {
 
   getPropertyListOutputs(): readonly PropertyListView[] {
     return this.propertyListOutputs;
+  }
+
+  getEmailDraftOutputs(): readonly EmailDraftView[] {
+    const unique = new Map<string, EmailDraftView>();
+    for (const draft of this.emailDraftOutputs) unique.set(draft.id, draft);
+    return [...unique.values()];
   }
 
   hasStartedToolExecution(): boolean {
@@ -267,6 +283,22 @@ class AgentTraceCallback extends BaseCallbackHandler {
   private errorMessage(err: unknown): string {
     if (err instanceof Error) return err.message;
     return String(err);
+  }
+}
+
+function generatedBrochure(output: unknown): { fileName: string; attachmentId: string; downloadName: string } | undefined {
+  const text = typeof output === "string" ? output : extractAllMessageText(output);
+  if (!text) return;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (parsed.success !== true || typeof parsed.attachmentId !== "string" || typeof parsed.fileName !== "string") return;
+    return {
+      fileName: parsed.fileName,
+      attachmentId: parsed.attachmentId,
+      downloadName: typeof parsed.downloadName === "string" ? parsed.downloadName : attachmentDownloadName(parsed.fileName),
+    };
+  } catch {
+    return;
   }
 }
 
@@ -502,11 +534,14 @@ export class Gateway {
       // Extract text response from the agent result
       const responseText = extractLastAssistantText(result);
       const delivery = extractMediaDelivery(responseText);
-      const hiddenDelivery = extractMediaDelivery(
-        extractAllMessageText(result)
-      );
+      const hiddenDelivery = extractMediaDelivery(extractAllMessageText(result));
+      const brochures = traceCallback.getDocumentToolOutputs().flatMap((output) => {
+        const brochure = generatedBrochure(output);
+        return brochure ? [brochure] : [];
+      });
       const toolDeliveries = traceCallback
         .getDocumentToolOutputs()
+        .filter((output) => !generatedBrochure(output))
         .map((output) =>
           extractMediaDelivery(
             extractAllMessageText(output) || this.serializeToolOutput(output)
@@ -539,6 +574,7 @@ export class Gateway {
       if (
         !delivery.text.trim() &&
         delivery.documents.length === 0 &&
+        brochures.length === 0 &&
         delivery.media.length === 0 &&
         delivery.locations.length === 0
       ) {
@@ -568,6 +604,20 @@ export class Gateway {
             type: "property-list" as const,
             id: data.id,
             data,
+          })),
+          ...traceCallback.getEmailDraftOutputs().map((data) => ({
+            type: "email-draft" as const,
+            id: data.id,
+            data,
+          })),
+          ...brochures.map((brochure) => ({
+            type: "attachment" as const,
+            id: brochure.fileName,
+            data: {
+              fileName: brochure.fileName,
+              downloadName: brochure.downloadName,
+              mimeType: "application/pdf",
+            },
           })),
           ...delivery.documents.map((filePath) => {
             const fileName = path.basename(filePath);
@@ -606,6 +656,32 @@ export class Gateway {
             fileName: path.basename(documentPath),
             mimeType: mimeTypeForMedia(documentPath),
           });
+        }
+        const context = workflowContextForMessage(event);
+        for (const brochure of brochures) {
+          if (adapter.platform === "web") {
+            await adapter.sendDocument(event.chatId, brochure.fileName, {
+              replyTo: event.id,
+              fileName: brochure.downloadName,
+              mimeType: "application/pdf",
+            });
+            continue;
+          }
+          let dir: string | undefined;
+          try {
+            const { bytes } = await readAttachment(context, brochure.attachmentId);
+            dir = await mkdtemp(path.join(tmpdir(), "bonte-pdf-"));
+            const temp = path.join(dir, path.basename(brochure.fileName));
+            await writeFile(temp, bytes, { mode: 0o600 });
+            console.log(`[Gateway] sending document to ${event.platform}:${event.chatId}: ${brochure.fileName}`);
+            await adapter.sendDocument(event.chatId, temp, {
+              replyTo: event.id,
+              fileName: brochure.downloadName,
+              mimeType: "application/pdf",
+            });
+          } finally {
+            if (dir) await rm(dir, { recursive: true, force: true });
+          }
         }
 
         for (const media of delivery.media) {
@@ -1042,10 +1118,6 @@ export class Gateway {
       timestamp: message.timestamp.toISOString(),
       data_parts: message.dataParts ?? [],
     }));
-  }
-
-  async findLegacyBrochureAttachment(workspaceId: string, fileName: string) {
-    return this.sessions.findLegacyBrochureAttachment(workspaceId, fileName);
   }
 
   async hasSessionMessage(

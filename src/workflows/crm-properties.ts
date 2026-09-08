@@ -49,6 +49,17 @@ export function canonicalProperty(property: CrmRecord): CrmRecord {
   return { ...property, propertyId: documented ?? deployed };
 }
 
+/** Compact localized title using the same en/eng-then-first locale rule as CRM UI cards. */
+export function propertyTitle(property: CrmRecord, language = "en"): string | undefined {
+  const locales = records(property.locale);
+  const wanted = language.toLowerCase();
+  const preferred = locales.find((locale) => {
+    const code = String(locale.language ?? "").toLowerCase();
+    return code === wanted || (wanted === "en" && /^(?:en|eng)$/.test(code));
+  }) ?? locales[0];
+  return string(preferred?.title) ?? string(property.title);
+}
+
 function sameReference(left: unknown, right: unknown): boolean {
   return !!string(left) && !!string(right) && string(left) === string(right);
 }
@@ -78,7 +89,7 @@ export function configuredListingMappings(): VerifiedListingMapping[] {
 export async function resolveExactProperty(request: { reference?: string; propertyId?: number; language?: string }): Promise<VerifiedProperty> {
   const reference = string(request.reference);
   if (!reference && request.propertyId === undefined) throw new Error("Provide a property reference or propertyId.");
-  if (request.propertyId !== undefined && (!Number.isInteger(request.propertyId) || request.propertyId <= 0)) throw new Error("propertyId must be a positive integer.");
+  if (request.propertyId !== undefined && (!Number.isSafeInteger(request.propertyId) || request.propertyId <= 0)) throw new Error("propertyId must be a positive integer.");
   const language = z.enum(crmLanguages).parse(request.language ?? "en");
   const response = await callCrmApiWithPagination({
     endpoint: "/api/Property/ListProperties", method: "POST", body: {
@@ -211,9 +222,9 @@ export function matchProperties(properties: CrmRecord[], input: BuyerBrief) {
   return { matches: ranked.filter((item) => item.status === "exact"), unverified: ranked.filter((item) => item.status === "unverified"), excluded: ranked.filter((item) => item.status === "excluded") };
 }
 
-export function propertySummary(property: CrmRecord) {
+export function propertySummary(property: CrmRecord, language = "en") {
   property = canonicalProperty(property);
-  return { propertyId: property.propertyId, reference: property.reference, type: property.type, businessType: property.businessType,
+  return { propertyId: property.propertyId, reference: property.reference, title: propertyTitle(property, language), type: property.type, businessType: property.businessType,
     price: property.price_visible === false ? undefined : property.price, priceVisible: property.price_visible, currency: property.currency,
     bedrooms: property.bedrooms, bathrooms: property.bathrooms, livingArea: property.living_area, totalArea: property.total_area, plotArea: property.plot_area,
     location: property.location, features: property.features_list_enum, sold: property.sold, published: property.visibleOnWebsite,

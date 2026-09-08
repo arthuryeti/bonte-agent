@@ -3,10 +3,9 @@ import * as z from "zod";
 import { generatePropertyBrochureCopy } from "../pdf/property-copy.js";
 import { fetchPropertyForPdf } from "../pdf/property-data.js";
 import { renderPropertyPdf } from "../pdf/render-property-pdf.js";
-import { readFile } from "node:fs/promises";
 import { getWorkflowContext } from "../workflows/context.js";
 import { getWorkflowStore } from "../workflows/store.js";
-import { saveGeneratedAttachment, attachmentSummary } from "../workflows/documents-attachments.js";
+import { saveGeneratedAttachment, attachmentSummary, deleteAttachment, documentStorageStatus } from "../workflows/documents-attachments.js";
 
 export const generatePropertyPdfTool = tool(
   async ({
@@ -18,6 +17,8 @@ export const generatePropertyPdfTool = tool(
     maxPhotos,
   }) => {
     try {
+      const ready = documentStorageStatus();
+      if (ready.status !== "configured") throw new Error(ready.missing);
       const property = await fetchPropertyForPdf({
         reference,
         propertyId,
@@ -31,23 +32,26 @@ export const generatePropertyPdfTool = tool(
         copy,
       });
       const context = getWorkflowContext();
-      const attachment = await saveGeneratedAttachment(context, {fileName:pdf.fileName,mimeType:"application/pdf",bytes:await readFile(pdf.filePath)});
-      await getWorkflowStore().put(context.workspaceId,"generated_file",pdf.fileName,{conversationId:context.conversationId,attachmentId:attachment.id,expiresAt:attachment.expiresAt});
-
+      const attachment = await saveGeneratedAttachment(context, { fileName: pdf.fileName, mimeType: "application/pdf", bytes: pdf.bytes });
+      try {
+        await getWorkflowStore().put(context.workspaceId, "generated_file", pdf.fileName, { conversationId: context.conversationId, attachmentId: attachment.id, expiresAt: attachment.expiresAt });
+      } catch (error) {
+        await deleteAttachment(context, attachment.id).catch(() => undefined);
+        throw error;
+      }
       return JSON.stringify({
         success: true,
         reference: property.reference,
         propertyId: property.propertyId,
         title: property.title,
         fileName: pdf.fileName,
+        downloadName: pdf.downloadName,
         pageCount: pdf.pageCount,
         attachmentId: attachment.id,
         download: attachmentSummary(attachment),
         copy,
         warnings: pdf.warnings,
-        mediaTag: `MEDIA:${pdf.filePath}`,
-        userMessage:
-          "The property PDF has been generated and should be sent as an attached document. Do not show the local file path to the user.",
+        userMessage: "The property PDF is ready. Share the protected download link. Do not show storage paths.",
       });
     } catch (error) {
       return JSON.stringify({
@@ -65,9 +69,8 @@ export const generatePropertyPdfTool = tool(
       "Generate a branded PDF brochure for a property listing. " +
       "Use this when the user asks to create, export, share, or send a property PDF. " +
       "Provide either a property reference or propertyId. " +
-      "The tool fetches listing data and photos from the CRM, renders the PDF under output/pdf, " +
-      "and returns an internal MEDIA:/absolute/path tag that should be included exactly once in the final response so messaging gateways can send the PDF as a document. " +
-      "Do not display or explain the local file path to the user.",
+      "The tool returns a protected attachment download URL. Include that link for web users. " +
+      "Do not mention filesystem paths or MEDIA tags.",
     schema: z
       .object({
         reference: z

@@ -1,14 +1,11 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
-import { resolve } from "node:path";
 import { WebSocket, WebSocketServer } from "ws";
 import { attachmentDownloadName } from "../media-delivery.js";
 import type { Gateway } from "./gateway.js";
 import type { WebAdapter, WebGatewayEvent } from "./platforms/web.js";
 import { serveWorkflowHttp, trustedHttpContext } from "../workflows/http.js";
-import { attachmentPrompt, readAttachment, saveGeneratedAttachment, deleteAttachment, documentExpiry, MAX_ATTACHMENT_BYTES } from "../workflows/documents-attachments.js";
+import { attachmentPrompt, readAttachment } from "../workflows/documents-attachments.js";
 import { workflowContextForMessage } from "../workflows/context.js";
 import { scheduleFollowUp } from "../workflows/tasks.js";
 import { getWorkflowStore } from "../workflows/store.js";
@@ -113,7 +110,7 @@ export class GatewayWebSocketServer {
         void this.serveFile(request, response, url.searchParams.get("name") ?? "");
         return;
       }
-      if (url.pathname === "/attachments" || url.pathname === "/workflows") {
+      if (url.pathname === "/attachments" || url.pathname === "/workflows" || url.pathname === "/crm") {
         if (!this.isAuthorized(request)) { response.writeHead(401).end(); return; }
         void serveWorkflowHttp(request, response, url);
         return;
@@ -574,31 +571,7 @@ export class GatewayWebSocketServer {
     }
     try {
       const context = trustedHttpContext(request);
-      const store = getWorkflowStore();
-      let owned = await store.get(context.workspaceId, "generated_file", name);
-      // A protected mapping is authoritative even after its attachment is
-      // deleted/expired. Only an unmapped, historically attached brochure can migrate.
-      if (!owned && /^property-[A-Za-z0-9][A-Za-z0-9._-]*\.pdf$/.test(name)) {
-        const proof = await this.gateway.findLegacyBrochureAttachment(context.workspaceId, name);
-        const expiresAt = proof && new Date(proof.timestamp.getTime() + Date.parse(documentExpiry()) - Date.now());
-        if (proof && expiresAt && Number.isFinite(expiresAt.getTime()) && proof.timestamp.getTime() <= Date.now() && expiresAt.getTime() > Date.now()) {
-          const file = await open(resolve("output/pdf", name), constants.O_RDONLY | constants.O_NOFOLLOW);
-          let bytes: Buffer;
-          try {
-            const stat = await file.stat();
-            if (!stat.isFile() || stat.size < 5 || stat.size > MAX_ATTACHMENT_BYTES) throw new Error("Invalid legacy brochure.");
-            bytes = await file.readFile();
-          } finally { await file.close(); }
-          if (bytes.subarray(0, 5).toString() !== "%PDF-") throw new Error("Invalid legacy brochure.");
-          const attachment = await saveGeneratedAttachment({ ...context, conversationId: proof.chatId }, { fileName: name, mimeType: "application/pdf", bytes });
-          try {
-            await store.put(context.workspaceId, "attachment", attachment.id, { ...attachment, createdAt: proof.timestamp.toISOString(), expiresAt: expiresAt.toISOString() });
-            const inserted = await store.create(context.workspaceId, "generated_file", name, { conversationId: proof.chatId, attachmentId: attachment.id, expiresAt: expiresAt.toISOString(), migratedFromHistory: true });
-            if (!inserted) await deleteAttachment(context, attachment.id);
-          } catch (error) { await deleteAttachment(context, attachment.id).catch(() => undefined); throw error; }
-          owned = await store.get(context.workspaceId, "generated_file", name);
-        }
-      }
+      const owned = await getWorkflowStore().get(context.workspaceId, "generated_file", name);
       if (!owned) { response.writeHead(404).end(); return; }
       const {attachment,bytes} = await readAttachment(context, String(owned.data.attachmentId));
       const downloadName = attachmentDownloadName(name);

@@ -1,0 +1,1510 @@
+{
+  "version": "bonte-cmi-2026-pt-en-v1",
+  "templatePath": "CMI__2026.pdf",
+  "templateSha256": "4e5d59c391d26a63d526449571a5bcd6b3d8a20f0d57b08dd3424f293566661d",
+  "format": "pdf",
+  "title": "Contrato de Mediação Imobiliária - Bonte & Filipidis",
+  "requiredDocuments": [
+    {
+      "category": "party",
+      "label": "client/spouse identification, marital regime or corporate authority, and agent identification",
+      "minimum": 1
+    },
+    {
+      "category": "transaction",
+      "label": "property land registry, caderneta predial, construction/use licence and energy certificate (may be supplied as one packet)",
+      "minimum": 1
+    }
+  ],
+  "reviewNotes": [
+    "The exact ten-page 2026 Portuguese/English source is retained. Signatures remain blank. Only completion fields and choice markers are editable; printed clauses are not editable.",
+    "Provide readable client identification (and spouse/marital regime or corporate representation evidence as applicable), agent identification, land registry/title, caderneta predial, use/construction licence and energy certificate. A combined document packet is accepted; each fact still needs its exact source quotation.",
+    "Confirm the contract number/date, transaction, price and wording in both languages, exclusivity, fee, VAT and payment terms explicitly. Never infer those terms from uploaded instructions. The fixed source states six months, automatic renewal and Lisbon signing; this version only accepts dates in 2026.",
+    "Identical repeated PDF fields and choice markers are linked. Predefined English translations are separate editable fields; after a downloaded edit, review both languages. Chat corrections regenerate all copies from sourced facts. Downloaded edits do not update the intake.",
+    "The source has exceptionally narrow blanks. Values that cannot fit at 7 pt are rejected, never clipped or silently abbreviated. Some full addresses, marital regimes, identity/energy numbers and dates need an approved shorter wording or a revised source template.",
+    "Long spouse names and amounts in words can use the labelled continuation fields. Verify that both language columns express the same complete name and amount. For longer agent names, review the separate Portuguese continuation against the English line.",
+    "The source retains alternative liens statements, slash-separated party/property descriptions, and optional clause 6 without selection blanks. These printed alternatives need human review before signing. The source also has different registered-office and footer addresses; neither has been changed."
+  ],
+  "fields": [
+    {
+      "key": "agreement_date",
+      "label": "Data acordada (D/M/2026; Lisboa conforme o modelo)",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 10,
+      "pdf": {
+        "page": 1,
+        "x": 99.8,
+        "y": 632.68,
+        "width": 53,
+        "height": 13,
+        "coverBackground": true
+      },
+      "pdfCopies": [
+        {
+          "page": 9,
+          "x": 110.66,
+          "y": 122.97,
+          "width": 102,
+          "height": 13,
+          "coverBackground": true
+        },
+        {
+          "page": 9,
+          "x": 337.96,
+          "y": 122.97,
+          "width": 96,
+          "height": 13,
+          "coverBackground": true
+        }
+      ]
+    },
+    {
+      "key": "contract_number",
+      "label": "Número do CMI (sem /2026)",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 6,
+      "pdf": {
+        "page": 1,
+        "x": 250,
+        "y": 511.17,
+        "width": 32,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 365.61,
+          "y": 687.73,
+          "width": 29.99,
+          "height": 11
+        }
+      ],
+      "alignment": 2
+    },
+    {
+      "key": "client_name",
+      "label": "Nome legal do cliente",
+      "source": "party",
+      "required": true,
+      "maxLength": 100,
+      "pdf": {
+        "page": 1,
+        "x": 120,
+        "y": 259.59,
+        "width": 356,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 77.25,
+          "y": 327.14,
+          "width": 211.5,
+          "height": 11
+        },
+        {
+          "page": 2,
+          "x": 303.75,
+          "y": 327.14,
+          "width": 211.5,
+          "height": 11
+        }
+      ],
+      "alignment": 1
+    },
+    {
+      "key": "marital_status",
+      "label": "Estado civil / pessoa coletiva",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 137.63,
+        "y": 294.23,
+        "width": 49.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 376.6,
+          "y": 294.23,
+          "width": 49.5,
+          "height": 11,
+          "valueMap": {
+            "Solteiro": "Single",
+            "Solteira": "Single",
+            "Casado": "Married",
+            "Casada": "Married",
+            "Divorciado": "Divorced",
+            "Divorciada": "Divorced",
+            "Viúvo": "Widowed",
+            "Viúva": "Widowed",
+            "Pessoa coletiva": "Company"
+          }
+        }
+      ],
+      "allowedValues": [
+        "Solteiro",
+        "Solteira",
+        "Casado",
+        "Casada",
+        "Divorciado",
+        "Divorciada",
+        "Viúvo",
+        "Viúva",
+        "Pessoa coletiva"
+      ]
+    },
+    {
+      "key": "property_regime",
+      "label": "Regime de bens (texto exato; traduções predefinidas limitadas)",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 77.25,
+        "y": 277.77,
+        "width": 40.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 339.36,
+          "y": 277.77,
+          "width": 58.5,
+          "height": 11,
+          "valueMap": {
+            "Separação": "Separation",
+            "Comunhão": "Community",
+            "Separação de bens": "Separation of property",
+            "Comunhão de adquiridos": "Community of acquisitions",
+            "Comunhão geral de bens": "General community of property"
+          }
+        }
+      ],
+      "allowedValues": [
+        "Separação",
+        "Comunhão",
+        "Separação de bens",
+        "Comunhão de adquiridos",
+        "Comunhão geral de bens"
+      ],
+      "requiredWhen": {
+        "key": "marital_status",
+        "values": [
+          "Casado",
+          "Casada"
+        ]
+      }
+    },
+    {
+      "key": "spouse_name",
+      "label": "Cônjuge - primeira linha",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 193.5,
+        "y": 277.77,
+        "width": 99.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 465.6,
+          "y": 277.77,
+          "width": 54.0,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "marital_status",
+        "values": [
+          "Casado",
+          "Casada"
+        ]
+      }
+    },
+    {
+      "key": "spouse_name_continued",
+      "label": "Cônjuge - continuação, se necessária",
+      "source": "party",
+      "required": false,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 77.25,
+        "y": 261.31,
+        "width": 58.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 303.75,
+          "y": 261.31,
+          "width": 85.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "marital_status",
+        "values": [
+          "Casado",
+          "Casada"
+        ]
+      }
+    },
+    {
+      "key": "client_address",
+      "label": "Morada do cliente (linha curta do modelo)",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 210.31,
+        "y": 261.31,
+        "width": 63.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 443.8,
+          "y": 261.31,
+          "width": 63.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "client_city",
+      "label": "Localidade do cliente",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 77.25,
+        "y": 244.86,
+        "width": 45.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 303.75,
+          "y": 244.86,
+          "width": 49.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "client_id",
+      "label": "CC/BI do cliente",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 77.25,
+        "y": 228.4,
+        "width": 40.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 358.37,
+          "y": 228.4,
+          "width": 40.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "marital_status",
+        "values": [
+          "Solteiro",
+          "Solteira",
+          "Casado",
+          "Casada",
+          "Divorciado",
+          "Divorciada",
+          "Viúvo",
+          "Viúva"
+        ]
+      }
+    },
+    {
+      "key": "spouse_id",
+      "label": "CC/BI do cônjuge",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 2,
+        "x": 131.65,
+        "y": 228.4,
+        "width": 40.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 431.58,
+          "y": 228.4,
+          "width": 40.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "marital_status",
+        "values": [
+          "Casado",
+          "Casada"
+        ]
+      }
+    },
+    {
+      "key": "client_tax_id",
+      "label": "NIF/NIPC do cliente",
+      "source": "party",
+      "required": true,
+      "maxLength": 20,
+      "pdf": {
+        "page": 2,
+        "x": 96.93,
+        "y": 211.94,
+        "width": 49.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 356.87,
+          "y": 211.94,
+          "width": 49.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "spouse_tax_id",
+      "label": "NIF do cônjuge",
+      "source": "party",
+      "required": true,
+      "maxLength": 20,
+      "pdf": {
+        "page": 2,
+        "x": 159.58,
+        "y": 211.94,
+        "width": 45.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 2,
+          "x": 436.08,
+          "y": 211.94,
+          "width": 45.0,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "marital_status",
+        "values": [
+          "Casado",
+          "Casada"
+        ]
+      }
+    },
+    {
+      "key": "client_capacity",
+      "label": "Qualidade do cliente",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 100.9,
+        "y": 700.94,
+        "width": 67.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 415.86,
+          "y": 700.94,
+          "width": 58.5,
+          "height": 11,
+          "valueMap": {
+            "Proprietário": "Owner",
+            "Senhorio": "Landlord",
+            "Trespassante": "Transferor",
+            "Outro": "Other"
+          }
+        }
+      ],
+      "allowedValues": [
+        "Proprietário",
+        "Senhorio",
+        "Trespassante",
+        "Outro"
+      ]
+    },
+    {
+      "key": "property_use",
+      "label": "Destino do imóvel",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 145.15,
+        "y": 519.92,
+        "width": 45.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 372.34,
+          "y": 519.92,
+          "width": 45.0,
+          "height": 11,
+          "valueMap": {
+            "Habitação": "Housing",
+            "Comércio": "Commerce",
+            "Serviços": "Services",
+            "Terreno": "Land"
+          }
+        }
+      ],
+      "allowedValues": [
+        "Habitação",
+        "Comércio",
+        "Serviços",
+        "Terreno"
+      ]
+    },
+    {
+      "key": "rooms",
+      "label": "Divisões assoalhadas",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 503.47,
+        "width": 22.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 497.1,
+          "y": 519.92,
+          "width": 22.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "area",
+      "label": "Área total (m²)",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 487.01,
+        "width": 27.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 473.98,
+          "y": 503.47,
+          "width": 27.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "property_address",
+      "label": "Morada do imóvel",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 470.55,
+        "width": 126.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 303.75,
+          "y": 470.55,
+          "width": 126.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "property_city",
+      "label": "Localidade do imóvel",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 227.95,
+        "y": 470.55,
+        "width": 63.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 445.72,
+          "y": 470.55,
+          "width": 72.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "property_parish",
+      "label": "Freguesia do imóvel",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 152.78,
+        "y": 454.1,
+        "width": 63.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 365.35,
+          "y": 454.1,
+          "width": 63.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "property_municipality",
+      "label": "Concelho do imóvel",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 437.64,
+        "width": 58.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 303.75,
+          "y": 437.64,
+          "width": 58.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "registry_office",
+      "label": "Conservatória do Registo Predial",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 172.6,
+        "y": 421.18,
+        "width": 40.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 303.75,
+          "y": 421.18,
+          "width": 40.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "registry_number",
+      "label": "Número da descrição predial",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 404.73,
+        "width": 40.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 454.41,
+          "y": 421.18,
+          "width": 40.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "license_number",
+      "label": "Licença de construção/utilização",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 91.79,
+        "y": 388.27,
+        "width": 40.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 477.12,
+          "y": 404.73,
+          "width": 40.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "license_municipality",
+      "label": "Câmara Municipal emissora da licença",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 371.81,
+        "width": 58.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 442.96,
+          "y": 388.27,
+          "width": 58.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "license_date",
+      "label": "Data da licença (D/M/AAAA)",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 10,
+      "pdf": {
+        "page": 3,
+        "x": 172.45,
+        "y": 369.81,
+        "width": 55.67,
+        "height": 13,
+        "coverBackground": true
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 303.75,
+          "y": 369.81,
+          "width": 55.67,
+          "height": 13,
+          "coverBackground": true
+        }
+      ]
+    },
+    {
+      "key": "tax_article",
+      "label": "Artigo matricial",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 338.9,
+        "width": 36.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 472.27,
+          "y": 355.36,
+          "width": 36.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "tax_parish",
+      "label": "Freguesia da matriz",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 218.88,
+        "y": 338.9,
+        "width": 58.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 389.51,
+          "y": 338.9,
+          "width": 58.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "energy_certificate",
+      "label": "Número do certificado energético",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 197.9,
+        "y": 322.44,
+        "width": 45.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 366.9,
+          "y": 322.44,
+          "width": 45.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "energy_expiry",
+      "label": "Validade do certificado energético (D/M/AAAA)",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 305.99,
+        "width": 31.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 460.56,
+          "y": 322.44,
+          "width": 31.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "business_type",
+      "label": "Negócio acordado",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 245.68,
+        "y": 223.71,
+        "width": 9.0,
+        "height": 11,
+        "option": "Compra"
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 422.21,
+          "y": 223.71,
+          "width": 13.5,
+          "height": 11,
+          "option": "Compra"
+        },
+        {
+          "page": 3,
+          "x": 77.25,
+          "y": 207.25,
+          "width": 9.0,
+          "height": 11,
+          "option": "Trespasse"
+        },
+        {
+          "page": 3,
+          "x": 506.22,
+          "y": 223.71,
+          "width": 13.5,
+          "height": 11,
+          "option": "Trespasse"
+        },
+        {
+          "page": 3,
+          "x": 140.18,
+          "y": 207.25,
+          "width": 9.0,
+          "height": 11,
+          "option": "Arrendamento"
+        },
+        {
+          "page": 3,
+          "x": 353.44,
+          "y": 207.25,
+          "width": 13.5,
+          "height": 11,
+          "option": "Arrendamento"
+        }
+      ],
+      "allowedValues": [
+        "Compra",
+        "Trespasse",
+        "Arrendamento"
+      ]
+    },
+    {
+      "key": "price",
+      "label": "Preço acordado em euros (formato português)",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 190.79,
+        "width": 72.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 3,
+          "x": 303.75,
+          "y": 190.79,
+          "width": 99.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "price_words_pt",
+      "label": "Preço por extenso em português - primeira linha",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 221.06,
+        "y": 190.79,
+        "width": 72.0,
+        "height": 11
+      }
+    },
+    {
+      "key": "price_words_pt_continued",
+      "label": "Preço por extenso em português - continuação",
+      "source": "agreement",
+      "required": false,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 77.25,
+        "y": 174.34,
+        "width": 139.5,
+        "height": 11
+      }
+    },
+    {
+      "key": "price_words_en",
+      "label": "Preço por extenso em inglês - primeira linha",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 420.56,
+        "y": 190.79,
+        "width": 99.0,
+        "height": 11
+      }
+    },
+    {
+      "key": "price_words_en_continued",
+      "label": "Preço por extenso em inglês - continuação",
+      "source": "agreement",
+      "required": false,
+      "maxLength": 120,
+      "pdf": {
+        "page": 3,
+        "x": 303.75,
+        "y": 174.34,
+        "width": 85.5,
+        "height": 11
+      }
+    },
+    {
+      "key": "liens_pt",
+      "label": "Ónus e encargos em português (usar prova registral)",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 4,
+        "x": 132.36,
+        "y": 503.47,
+        "width": 76.5,
+        "height": 11
+      }
+    },
+    {
+      "key": "liens_en",
+      "label": "Ónus e encargos - tradução inglesa aprovada",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 4,
+        "x": 303.75,
+        "y": 519.92,
+        "width": 76.5,
+        "height": 11
+      }
+    },
+    {
+      "key": "liens_amount",
+      "label": "Valor dos ónus e encargos em euros",
+      "source": "transaction",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 4,
+        "x": 77.25,
+        "y": 487.01,
+        "width": 81.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 4,
+          "x": 303.75,
+          "y": 503.47,
+          "width": 81.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "exclusivity",
+      "label": "Regime de contratação acordado",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 4,
+        "x": 196.86,
+        "y": 404.73,
+        "width": 9.0,
+        "height": 11,
+        "option": "Não exclusivo"
+      },
+      "pdfCopies": [
+        {
+          "page": 4,
+          "x": 311.42,
+          "y": 404.73,
+          "width": 13.5,
+          "height": 11,
+          "option": "Não exclusivo"
+        },
+        {
+          "page": 4,
+          "x": 77.25,
+          "y": 388.27,
+          "width": 9.0,
+          "height": 11,
+          "option": "Exclusivo"
+        },
+        {
+          "page": 4,
+          "x": 394.4,
+          "y": 404.73,
+          "width": 13.5,
+          "height": 11,
+          "option": "Exclusivo"
+        }
+      ],
+      "allowedValues": [
+        "Não exclusivo",
+        "Exclusivo"
+      ]
+    },
+    {
+      "key": "fee_type",
+      "label": "Tipo de remuneração acordado",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 77.25,
+        "y": 684.49,
+        "width": 13.5,
+        "height": 11,
+        "option": "Percentagem"
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 303.75,
+          "y": 700.94,
+          "width": 13.5,
+          "height": 11,
+          "option": "Percentagem"
+        },
+        {
+          "page": 5,
+          "x": 77.25,
+          "y": 602.21,
+          "width": 13.5,
+          "height": 11,
+          "option": "Montante fixo"
+        },
+        {
+          "page": 5,
+          "x": 303.75,
+          "y": 635.12,
+          "width": 13.5,
+          "height": 11,
+          "option": "Montante fixo"
+        }
+      ],
+      "allowedValues": [
+        "Percentagem",
+        "Montante fixo"
+      ]
+    },
+    {
+      "key": "fee_percentage",
+      "label": "Percentagem de remuneração",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 156.1,
+        "y": 684.49,
+        "width": 18.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 367.82,
+          "y": 700.94,
+          "width": 22.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Percentagem"
+        ]
+      }
+    },
+    {
+      "key": "fee_percentage_vat",
+      "label": "IVA da remuneração percentual",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 77.25,
+        "y": 635.12,
+        "width": 18.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 407.21,
+          "y": 668.03,
+          "width": 22.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Percentagem"
+        ]
+      }
+    },
+    {
+      "key": "fee_amount",
+      "label": "Remuneração fixa em euros",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 186.1,
+        "y": 602.21,
+        "width": 90.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 367.82,
+          "y": 635.12,
+          "width": 90.0,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Montante fixo"
+        ]
+      }
+    },
+    {
+      "key": "fee_words_pt",
+      "label": "Remuneração fixa por extenso em português",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 80.21,
+        "y": 585.75,
+        "width": 184.5,
+        "height": 11
+      },
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Montante fixo"
+        ]
+      }
+    },
+    {
+      "key": "fee_words_en",
+      "label": "Remuneração fixa por extenso em inglês - primeira linha",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 474.12,
+        "y": 635.12,
+        "width": 45.0,
+        "height": 11
+      },
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Montante fixo"
+        ]
+      }
+    },
+    {
+      "key": "fee_words_en_continued",
+      "label": "Remuneração fixa por extenso em inglês - continuação",
+      "source": "agreement",
+      "required": false,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 303.75,
+        "y": 618.66,
+        "width": 139.5,
+        "height": 11
+      },
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Montante fixo"
+        ]
+      }
+    },
+    {
+      "key": "fee_amount_vat",
+      "label": "IVA da remuneração fixa",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 220.43,
+        "y": 569.29,
+        "width": 22.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 358.74,
+          "y": 602.21,
+          "width": 22.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "fee_type",
+        "values": [
+          "Montante fixo"
+        ]
+      }
+    },
+    {
+      "key": "payment_terms",
+      "label": "Momento do pagamento acordado",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 77.25,
+        "y": 519.92,
+        "width": 13.5,
+        "height": 11,
+        "option": "Escritura"
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 303.75,
+          "y": 552.84,
+          "width": 13.5,
+          "height": 11,
+          "option": "Escritura"
+        },
+        {
+          "page": 5,
+          "x": 65,
+          "y": 454.1,
+          "width": 9,
+          "height": 11,
+          "option": "Repartido"
+        },
+        {
+          "page": 5,
+          "x": 291.5,
+          "y": 487.01,
+          "width": 9,
+          "height": 11,
+          "option": "Repartido"
+        },
+        {
+          "page": 5,
+          "x": 77.25,
+          "y": 388.27,
+          "width": 13.5,
+          "height": 11,
+          "option": "Contrato-promessa"
+        },
+        {
+          "page": 5,
+          "x": 303.75,
+          "y": 404.73,
+          "width": 13.5,
+          "height": 11,
+          "option": "Contrato-promessa"
+        }
+      ],
+      "allowedValues": [
+        "Escritura",
+        "Repartido",
+        "Contrato-promessa"
+      ]
+    },
+    {
+      "key": "payment_initial_percentage",
+      "label": "Percentagem paga no contrato-promessa",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 77.25,
+        "y": 454.1,
+        "width": 13.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 303.75,
+          "y": 487.01,
+          "width": 13.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "payment_terms",
+        "values": [
+          "Repartido"
+        ]
+      }
+    },
+    {
+      "key": "payment_remaining_percentage",
+      "label": "Percentagem remanescente na escritura",
+      "source": "agreement",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 5,
+        "x": 173.28,
+        "y": 437.64,
+        "width": 22.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 5,
+          "x": 441.76,
+          "y": 470.55,
+          "width": 22.5,
+          "height": 11
+        }
+      ],
+      "requiredWhen": {
+        "key": "payment_terms",
+        "values": [
+          "Repartido"
+        ]
+      }
+    },
+    {
+      "key": "agent_name",
+      "label": "Nome do angariador - primeira linha",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 7,
+        "x": 166.99,
+        "y": 207.25,
+        "width": 126.0,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 7,
+          "x": 303.75,
+          "y": 207.25,
+          "width": 153.0,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "agent_name_continued",
+      "label": "Nome do angariador - continuação portuguesa",
+      "source": "party",
+      "required": false,
+      "maxLength": 120,
+      "pdf": {
+        "page": 7,
+        "x": 77.25,
+        "y": 190.79,
+        "width": 54.0,
+        "height": 11
+      }
+    },
+    {
+      "key": "agent_id",
+      "label": "CC/BI do angariador (facultativo se NIF fornecido)",
+      "source": "party",
+      "required": false,
+      "maxLength": 120,
+      "pdf": {
+        "page": 7,
+        "x": 234.37,
+        "y": 174.34,
+        "width": 58.5,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 7,
+          "x": 460.83,
+          "y": 190.79,
+          "width": 58.5,
+          "height": 11
+        }
+      ]
+    },
+    {
+      "key": "agent_tax_id",
+      "label": "NIF do angariador",
+      "source": "party",
+      "required": true,
+      "maxLength": 120,
+      "pdf": {
+        "page": 7,
+        "x": 196,
+        "y": 157.88,
+        "width": 58,
+        "height": 11
+      },
+      "pdfCopies": [
+        {
+          "page": 7,
+          "x": 449.83,
+          "y": 174.34,
+          "width": 67.5,
+          "height": 11
+        }
+      ]
+    }
+  ]
+}

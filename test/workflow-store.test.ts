@@ -64,20 +64,43 @@ describe("durable workflow store",()=>{
     assert.match(String(response),/unresolved requirements/);
   });
 
-  it("proves legacy brochure ownership through actual scoped PostgreSQL chat metadata",async()=>{
+  it("lists oldest exact brochure proofs with workspace_ chat boundaries",async()=>{
     const db=await PGlite.create();
     try{
       await db.exec(await readFile(new URL("../web/drizzle/0001_gateway_persistence.sql",import.meta.url),"utf8"));
-      await db.query("INSERT INTO gateway_sessions(platform,chat_id) VALUES('web','owner_chat')");
       const name="property-TEST123-deadbeef.pdf";
-      await db.query("INSERT INTO gateway_messages(platform,chat_id,role,content,data_parts) VALUES('web','owner_chat','assistant','Attached',$1::jsonb)",[JSON.stringify([{type:"attachment",id:name,data:{fileName:name,mimeType:"application/pdf"}}])]);
+      const part=JSON.stringify([{type:"attachment",id:name,data:{fileName:name,mimeType:"application/pdf"}}]);
+      await db.query("INSERT INTO gateway_sessions(platform,chat_id) VALUES('web','owner_chat'),('web','owner_later'),('web','owner2_x'),('web','own_chat')");
+      await db.query("INSERT INTO gateway_messages(platform,chat_id,role,content,data_parts,created_at) VALUES('web','owner_later','assistant','Newer',$1::jsonb,NOW() - INTERVAL '2 days')",[part]);
+      await db.query("INSERT INTO gateway_messages(platform,chat_id,role,content,data_parts,created_at) VALUES('web','owner_chat','assistant','Older',$1::jsonb,NOW() - INTERVAL '10 days')",[part]);
+      await db.query("INSERT INTO gateway_messages(platform,chat_id,role,content,data_parts,created_at) VALUES('web','owner_chat','assistant','Expired',$1::jsonb,NOW() - INTERVAL '40 days')",[part]);
+      await db.query("INSERT INTO gateway_messages(platform,chat_id,role,content,data_parts) VALUES('web','owner2_x','assistant','Other',$1::jsonb)",[part]);
+      await db.query("INSERT INTO gateway_messages(platform,chat_id,role,content,data_parts) VALUES('web','own_chat','assistant','Prefix',$1::jsonb)",[part]);
       const sessions=new SessionStore({databaseUrl:"",databaseHost:"",allowInMemory:true});
       Object.assign(sessions,{pool:adapter(db)});
-      assert.equal((await sessions.findLegacyBrochureAttachment("owner",name))?.chatId,"owner_chat");
-      assert.equal(await sessions.findLegacyBrochureAttachment("other",name),undefined);
-      assert.equal(await sessions.findLegacyBrochureAttachment("own",name),undefined);
-      assert.equal(await sessions.findLegacyBrochureAttachment("owner","property-unknown.pdf"),undefined);
+      const proofs=await sessions.listLegacyBrochureProofs();
+      const owned=proofs.filter(p=>p.workspaceId==="owner"&&p.fileName===name);
+      assert.equal(owned.length,1);
+      assert.equal(owned[0].chatId,"owner_chat");
+      assert.ok(Math.abs(owned[0].timestamp.getTime() - Date.now() + 10 * 86_400_000) < 86_400_000);
+      assert.equal(proofs.some(p=>p.workspaceId==="own"&&p.fileName===name),true);
+      assert.equal(proofs.some(p=>p.workspaceId==="owner2"&&p.fileName===name),true);
+      assert.equal(proofs.some(p=>p.workspaceId==="owner"&&p.chatId==="own_chat"),false);
     }finally{await db.close();}
+  });
+  it("scan resumes after the cursor when earlier rows are deleted",async()=>{
+    const db=await PGlite.create();
+    const store=new PostgresWorkflowStore(adapter(db));
+    try{
+      await db.exec(await readFile(new URL("../web/drizzle/0002_wakeful_logan.sql",import.meta.url),"utf8"));
+      for(let i=0;i<501;i++)await store.put("a","attachment",String(i).padStart(3,"0"),{n:i});
+      const first=await store.scan("attachment",500);
+      assert.equal(first.length,500);
+      for(const row of first)await store.remove(row.workspaceId,"attachment",row.id);
+      const rest=await store.scan("attachment",500,{workspaceId:first[499].workspaceId,id:first[499].id});
+      assert.equal(rest.length,1);
+      assert.equal(rest[0].id,"500");
+    }finally{await store.close();}
   });
 
 });
