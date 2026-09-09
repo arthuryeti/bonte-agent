@@ -10,6 +10,34 @@ interface CrmDetails {
   warnings?: string[];
 }
 
+export function safeCrmUrl(value?: string, listing = false): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) return undefined;
+    if (listing && (url.protocol !== 'https:' || !['bontefilipidis.com', 'www.bontefilipidis.com'].includes(url.hostname))) return undefined;
+    return url.href;
+  } catch { return undefined; }
+}
+
+export function formatCrmPrice(value?: string, currency = "EUR", visible = true): string {
+  if (!visible) return "Price on request";
+  if (!value?.trim()) return "Not provided";
+  // Keep already formatted CRM prices intact; guessing separators can change the amount.
+  if (!/^-?\d+(?:\.\d+)?$/.test(value.trim()) || !Number.isFinite(Number(value))) return value;
+  if (currency === "€") currency = "EUR";
+  if (!/^[A-Z]{3}$/.test(currency)) return `${value} ${currency}`.trim();
+  return new Intl.NumberFormat("en-GB", { style: "currency", currency, maximumFractionDigits: 2 }).format(Number(value)).replace(/\.00$/, "");
+}
+
+export function formatCrmDate(value?: string): string {
+  if (!value) return "Not provided";
+  const date = new Date(value);
+  return Number.isFinite(date.getTime())
+    ? new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", ...(value.includes("T") ? { timeStyle: "short" as const } : {}) }).format(date)
+    : value;
+}
+
 export function useCrmDetails(type: "lead" | "property", id = "", reference = "") {
   const [revision, setRevision] = useState(0);
   const query = new URLSearchParams({ type });
@@ -37,13 +65,7 @@ export function useCrmDetails(type: "lead" | "property", id = "", reference = ""
           || (data.warnings !== undefined && (!Array.isArray(data.warnings) || !data.warnings.every((warning) => typeof warning === "string")))) {
           throw new Error("The CRM returned incomplete details. Please try again.");
         }
-        if (data.property?.listingUrl) {
-          try {
-            const listing = new URL(data.property.listingUrl);
-            if (listing.protocol !== "https:" || !["bontefilipidis.com", "www.bontefilipidis.com"].includes(listing.hostname)
-              || listing.username || listing.password) data.property.listingUrl = undefined;
-          } catch { data.property.listingUrl = undefined; }
-        }
+        if (data.property) data.property.listingUrl = safeCrmUrl(data.property.listingUrl, true);
         if (!controller.signal.aborted) setState({ key, data });
       } catch (error) {
         if (!controller.signal.aborted) setState({ key, error: error instanceof Error ? error.message : "CRM details could not be loaded." });

@@ -209,7 +209,7 @@ describe("web JSON-RPC gateway", () => {
     client.socket.close();
   });
 
-  it("adds compact CRM-card guidance without persisting it as the user message", async () => {
+  it("adds compact CRM-table guidance without persisting it as the user message", async () => {
     let agentMessage = "";
     const fakeAgent = {
       async invoke(input: { messages: Array<{ content: string }> }) {
@@ -231,11 +231,11 @@ describe("web JSON-RPC gateway", () => {
       (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id
     );
 
-    assert.match(agentMessage, /interactive lead card/);
-    assert.match(agentMessage, /interactive property card/);
+    assert.match(agentMessage, /lead table/);
+    assert.match(agentMessage, /property table/);
     assert.match(agentMessage, /decision-useful summary/);
     assert.match(agentMessage, /sale\/rent and property-type mix/);
-    assert.match(agentMessage, /property cards render below/i);
+    assert.match(agentMessage, /property tables render below/i);
     assert.match(agentMessage, /Show my latest leads/);
     const history = await client.request<{
       messages: Array<{ role: string; content: string }>;
@@ -672,6 +672,8 @@ describe("web JSON-RPC gateway", () => {
       { name: "search_crm_properties", output: { ok: true, matches: [{ status: "exact", property }], unverified: [{ status: "unverified", property: { ...property, propertyId: 43 } }], exactMatchesInScannedRecords: 1, coverage: { totalRecords: 900, complete: false } } },
       { name: "get_verified_property", output: { ok: true, property, propertyId: 42, reference: "A-42" } },
       { name: "match_saved_buyer", output: { briefId: "buyer-1", matches: [{ status: "exact", property }], totalMatches: 1, coverage: { complete: true } } },
+      { name: "get_buyer_matches", output: { matches: [{ status: "unverified", property: { ...property, propertyId: "idealista:42", source: "idealista", sourceId: "42", matchStatus: "unverified", matchReasons: ["Pool: unknown"] } }], totalMatches: 1,
+        buyerSearch: { runId: "11111111-1111-4111-8111-111111111111", briefId: "buyer-1", name: "Buyer", page: 1, pages: 1, selectedIds: [], coverage: [] } } },
       { name: "query_crm_leads", output: { ok: true, leads: [{ Id: "lead-42" }], matchedRecords: 1 } },
       { name: "manage_follow_up", output: { state: "error", message: "Task unavailable" } },
       { name: "search_crm_properties", output: { ok: false, error: "CRM unavailable" } },
@@ -696,15 +698,15 @@ describe("web JSON-RPC gateway", () => {
     const accepted = await client.request<{ turn_id: string }>("prompt.submit", { session_id: "workflow-cards", text: "Check the saved buyer matches and latest leads" });
     await waitForEvent(client.events, (event) => event.type === "turn.complete" && event.turn_id === accepted.turn_id);
     const propertyEvents = client.events.filter((event) => event.type === "property.list.available");
-    assert.equal(propertyEvents.length, 3);
+    assert.equal(propertyEvents.length, 4);
     const first = propertyEvents[0].payload as { data: { properties: unknown[]; totalRecords: number } };
     assert.equal(first.data.properties.length, 1);
     assert.equal(first.data.totalRecords, 1);
     assert.equal(client.events.filter((event) => event.type === "lead.list.available").length, 1);
-    assert.equal(client.events.filter((event) => event.type === "tool.complete").length, 4);
+    assert.equal(client.events.filter((event) => event.type === "tool.complete").length, 5);
     assert.deepEqual(client.events.filter((event) => event.type === "tool.error").map((event) => (event.payload as { message: string }).message), ["Task unavailable", "CRM unavailable", "Property unavailable"]);
     const history = await client.request<{ messages: Array<{ data_parts?: Array<{ type: string }> }> }>("session.history", { session_id: "workflow-cards" });
-    assert.equal(history.messages.at(-1)?.data_parts?.length, 4);
+    assert.equal(history.messages.at(-1)?.data_parts?.length, 5);
     client.socket.close();
   });
 
@@ -735,6 +737,8 @@ describe("web JSON-RPC gateway", () => {
         const callback = options.callbacks?.[0];
         callback?.handleToolStart({ name: "save_email_draft" }, "{}", "email-save", undefined, undefined, undefined, "save_email_draft");
         callback?.handleToolEnd({ content: [{ type: "text", text: JSON.stringify(v2) }] }, "email-save");
+        callback?.handleToolStart({ name: "prepare_buyer_shortlist" }, "{}", "shortlist-save");
+        callback?.handleToolEnd(JSON.stringify(v1), "shortlist-save");
         callback?.handleToolStart({ name: "list_document_drafts" }, "{}", "email-list", undefined, undefined, undefined, "list_document_drafts");
         callback?.handleToolEnd({ content: [{ type: "text", text: JSON.stringify([{ kind: "email-draft", ...v1 }, { kind: "email-draft", ...v2 }]) }] }, "email-list");
         return { messages: [{ role: "assistant", content: "The draft is saved." }] };

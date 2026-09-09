@@ -73,7 +73,7 @@ export async function POST(request: Request) {
   const sessionId = String(form.get("sessionId") || "");
   const category = String(form.get("category") || "other");
   if (!(file instanceof File) || !file.size || file.size > maxUpload || !sessionPattern.test(sessionId) || !["party", "transaction", "other"].includes(category)) {
-    return Response.json({ error: "Provide a document up to 15 MB, its category and a valid conversation." }, { status: 400 });
+    return Response.json({ error: "Provide a document up to 15 MB and a valid conversation." }, { status: 400 });
   }
   try {
     const upstream = await fetch(`${gatewayOrigin()}/attachments`, { method: "POST", headers: { ...headers,

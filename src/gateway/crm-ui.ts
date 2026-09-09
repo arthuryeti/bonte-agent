@@ -253,6 +253,14 @@ export function normalizePropertyView(
 
   return {
     id: id || reference || `property-${index + 1}`,
+    ...(value.source === "crm" || value.source === "idealista" ? { source: value.source, sourceId: asString(value.sourceId),
+      builtArea: asString(value.builtArea),
+      sourceLinks: (Array.isArray(value.sourceLinks) ? value.sourceLinks : []).filter(isRecord).flatMap(link => {
+        const url = verifiedListingUrl(link.url); return url ? [{ source: asString(link.source) ?? "Listing", url }] : [];
+      }),
+      matchStatus: value.matchStatus === "exact" ? "exact" as const : "unverified" as const,
+      matchReasons: (Array.isArray(value.matchReasons) ? value.matchReasons : []).filter((v): v is string => typeof v === "string"),
+    } : {}),
     internalId: firstString(value.internalId, value.InternalId),
     reference: reference || id || `Property ${index + 1}`,
     title: title!, // The ID/reference guard above guarantees the fallback.
@@ -297,6 +305,7 @@ function normalizeEvent(value: unknown): LeadEventView | undefined {
     id: firstString(value.EventID, value.EventId, value.Id),
     type,
     title,
+    description: stripHtml(firstString(value.Description)),
     location: firstString(value.Location),
     startsAt: firstString(value.StartDate),
     endsAt: firstString(value.EndDate),
@@ -337,9 +346,11 @@ export function normalizeLeadView(value: unknown, index = 0, compactPreview = tr
     id,
     title:
       firstString(value.Title, contact?.name) || `Lead ${index + 1}`,
+    ...(!compactPreview ? { description: stripHtml(firstString(value.Description)) } : {}),
     status: firstString(value.CurrentStatus, value.Status),
     origin: firstString(value.Origin),
     outcome: firstString(value.Outcome),
+    outcomeDate: firstString(value.OutcomeDate),
     priority: firstString(value.EventPriority, value.Priority),
     createdAt: firstString(value.CreateDate),
     updatedAt: firstString(value.LastUpdate),
@@ -391,11 +402,12 @@ export function normalizePropertyListToolOutput(
   if (!isRecord(parsed) || extractCrmToolError(parsed)) return undefined;
 
   const matching = Array.isArray(parsed.matches) && (typeof parsed.exactMatchesInScannedRecords === "number" || typeof parsed.totalMatches === "number");
+  const buyer = isRecord(parsed.buyerSearch) && typeof parsed.buyerSearch.runId === "string" && /^[a-f0-9-]{36}$/.test(parsed.buyerSearch.runId) ? parsed.buyerSearch : undefined;
   const exactProperty = parsed.ok === true && isRecord(parsed.property) &&
     asString(parsed.propertyId) === asString(parsed.property.propertyId) && !!asString(parsed.propertyId) &&
     asString(parsed.reference) === asString(parsed.property.reference) && !!asString(parsed.reference);
   const sourceProperties = Array.isArray(parsed.PropertyList) ? parsed.PropertyList
-    : matching ? (parsed.matches as unknown[]).filter(isRecord).filter((match) => match.status === "exact").map((match) => match.property)
+    : matching ? (parsed.matches as unknown[]).filter(isRecord).filter((match) => match.status === "exact" || (buyer && match.status === "unverified")).map((match) => match.property)
       : exactProperty ? [parsed.property] : undefined;
   if (!sourceProperties) return undefined;
   const properties: PropertyView[] = [];
@@ -411,6 +423,16 @@ export function normalizePropertyListToolOutput(
 
   return {
     id: `property-list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    ...(buyer ? { buyerSearch: {
+      runId: String(buyer.runId), briefId: asString(buyer.briefId) ?? "", leadId: asString(buyer.leadId), name: asString(buyer.name) ?? "Buyer",
+      page: asCount(buyer.page, 1), pages: asCount(buyer.pages, 1), maxPages: asCount(buyer.maxPages, 100),
+      exactCount: asCount(buyer.exactCount, 0), unverifiedCount: asCount(buyer.unverifiedCount, 0), fetchedAt: asString(buyer.fetchedAt) ?? "",
+      selectedIds: (Array.isArray(buyer.selectedIds) ? buyer.selectedIds : []).filter((v): v is string => typeof v === "string"),
+      coverage: (Array.isArray(buyer.coverage) ? buyer.coverage : []).filter(isRecord).map(c => ({ source: asString(c.source) ?? "Source", complete: c.complete === true,
+        fetchedRecords: asCount(c.fetchedRecords, 0), totalRecords: typeof c.totalRecords === "number" ? c.totalRecords : undefined,
+        warnings: (Array.isArray(c.warnings) ? c.warnings : []).filter((v): v is string => typeof v === "string"),
+      })),
+    } } : {}),
     properties,
     totalRecords,
     returnedRecords: properties.length,

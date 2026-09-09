@@ -23,6 +23,7 @@ export interface LeadEventView {
   id?: string;
   type?: string;
   title: string;
+  description?: string;
   location?: string;
   startsAt?: string;
   endsAt?: string;
@@ -31,9 +32,11 @@ export interface LeadEventView {
 export interface LeadView {
   id: string;
   title: string;
+  description?: string;
   status?: string;
   origin?: string;
   outcome?: string;
+  outcomeDate?: string;
   priority?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -66,6 +69,12 @@ export interface PropertyAgentView {
 
 export interface PropertyView {
   id: string;
+  source?: "crm" | "idealista";
+  sourceId?: string;
+  sourceLinks?: Array<{ source: string; url: string }>;
+  matchStatus?: "exact" | "unverified";
+  matchReasons?: string[];
+  builtArea?: string;
   internalId?: string;
   reference: string;
   title: string;
@@ -103,6 +112,12 @@ export interface PropertyListView {
   returnedRecords: number;
   truncated: boolean;
   generatedAt: string;
+  buyerSearch?: {
+    runId: string; briefId: string; leadId?: string; name: string;
+    page: number; pages: number; maxPages: number; exactCount: number; unverifiedCount: number;
+    fetchedAt: string; selectedIds: string[];
+    coverage: Array<{ source: string; complete: boolean; fetchedRecords: number; totalRecords?: number; warnings: string[] }>;
+  };
 }
 
 export interface EmailDraftView {

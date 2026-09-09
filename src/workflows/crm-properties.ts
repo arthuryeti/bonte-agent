@@ -16,7 +16,8 @@ export const propertyCriteriaSchema = z.object({
   countryCode: z.enum(["pt", "es", "fr", "it", "pa", "br"]).optional(),
   locationIds: integers.optional(), cityIds: integers.optional(), localityIds: integers.optional(),
   price: rangeSchema.optional(), bedrooms: rangeSchema.optional(), bathrooms: rangeSchema.optional(),
-  livingArea: rangeSchema.optional(), totalArea: rangeSchema.optional(), plotArea: rangeSchema.optional(),
+  livingArea: rangeSchema.optional(), totalArea: rangeSchema.optional(), builtArea: rangeSchema.optional(), plotArea: rangeSchema.optional(),
+  currency: z.enum(["EUR", "USD", "GBP", "BRL"]).optional(),
   active: z.boolean().optional(), sold: z.boolean().optional(), published: z.boolean().optional(),
   agentId: z.number().int().positive().optional(),
 }).strict();
@@ -24,6 +25,8 @@ export type PropertyCriteria = z.infer<typeof propertyCriteriaSchema>;
 export const buyerBriefSchema = z.object({
   mandatory: propertyCriteriaSchema,
   preferred: propertyCriteriaSchema.optional(),
+  idealistaLocations: z.array(z.object({ name: z.string().trim().min(1).max(150), locationId: z.string().regex(/^0-EU-PT(?:-\d+)+$/).optional() })).min(1).max(10).optional()
+    .describe("Idealista locality names, with IDs only from returned location choices. Use Concelho for mandatory cities. CRM numeric location IDs are unrelated."),
 }).strict();
 export type BuyerBrief = z.infer<typeof buyerBriefSchema>;
 export const propertySearchSchema = z.object({
@@ -46,7 +49,12 @@ export function canonicalProperty(property: CrmRecord): CrmRecord {
   // supplies the separately documented `propertyId` field.
   const documented = number(property.propertyId);
   const deployed = number(property.id);
-  return { ...property, propertyId: documented ?? deployed };
+  // ListProperties uses currency for the symbol and priceprefixhelper for the ISO code.
+  const currency = string(property.priceprefixhelper) ?? string(property.currency);
+  const location = record(property.location);
+  return { ...property, propertyId: documented ?? deployed,
+    ...(currency ? { currency: currency === "€" ? "EUR" : currency } : {}),
+    ...(location.countryCode === undefined && normalizeText(location.Country) === "portugal" ? { location: { ...location, countryCode: "pt" } } : {}) };
 }
 
 /** Compact localized title using the same en/eng-then-first locale rule as CRM UI cards. */
@@ -129,7 +137,8 @@ export function assessProperty(property: CrmRecord, input: PropertyCriteria): Pr
   const test = (criterion: string, expected: unknown, actual: unknown, source: string, pass?: boolean) => evidence.push({
     criterion, expected, actual, source, status: actual === undefined ? "unknown" : pass ? "pass" : "fail",
   });
-  if (!number(property.propertyId) || !string(property.reference)) test("identity", "Stable property ID and reference", undefined, "propertyId/id + reference");
+  const identified = property.source === "idealista" ? /^\d+$/.test(String(property.sourceId)) : !!number(property.propertyId);
+  if (!identified || !string(property.reference)) test("identity", "Stable source ID and reference", undefined, "source ID + reference");
   for (const [criterion, field] of [["businessTypes", "businessType"], ["propertyTypes", "type"]] as const) {
     const expected = criteria[criterion];
     if (expected?.length) { const actual = string(property[field]); test(criterion, expected, actual, field, expected.some((value) => normalizedEnum(value) === normalizedEnum(actual))); }
@@ -141,10 +150,11 @@ export function assessProperty(property: CrmRecord, input: PropertyCriteria): Pr
     if (expected?.length) { const actual = fields.map((field) => string(location[field])).find(Boolean); test(criterion, expected, actual, `location.${fields.join("/")}`, expected.some((value) => normalizeText(value) === normalizeText(actual))); }
   }
   if (criteria.countryCode) test("countryCode", criteria.countryCode, string(location.countryCode), "location.countryCode", normalizeText(criteria.countryCode) === normalizeText(location.countryCode));
+  if (criteria.currency) test("currency", criteria.currency, string(property.currency), "currency", property.currency === criteria.currency);
   for (const [criterion, actual, source] of [["locationIds", number(location.locationId), "location.locationId"], ["cityIds", number(inner.CityId), "location.InnerLocation.CityId"], ["localityIds", number(inner.LocalityId), "location.InnerLocation.LocalityId"]] as const) {
     const expected = criteria[criterion]; if (expected?.length) test(criterion, expected, actual, source, actual !== undefined && expected.includes(actual));
   }
-  for (const [criterion, field] of [["price", "price"], ["bedrooms", "bedrooms"], ["bathrooms", "bathrooms"], ["livingArea", "living_area"], ["totalArea", "total_area"], ["plotArea", "plot_area"]] as const) {
+  for (const [criterion, field] of [["price", "price"], ["bedrooms", "bedrooms"], ["bathrooms", "bathrooms"], ["livingArea", "living_area"], ["totalArea", "total_area"], ["builtArea", "built_area"], ["plotArea", "plot_area"]] as const) {
     const expected = criteria[criterion]; if (!expected || (expected.min === undefined && expected.max === undefined)) continue;
     // Casafari commonly uses zero for price-on-application; it cannot prove a budget match.
     const value = number(property[field]); const actual = field === "price" && value === 0 ? undefined : value;
@@ -179,14 +189,14 @@ function criteriaToRequest(criteria: PropertyCriteria): CrmRecord {
     if (criteria[key]?.min !== undefined) body[min] = criteria[key]!.min;
     if (criteria[key]?.max !== undefined) body[max] = criteria[key]!.max;
   }
-  // FreeText can narrow retrieval, but only exact location fields establish a city match.
-  if (criteria.cities?.length === 1) body.FreeText = criteria.cities[0];
+  // City text may be absent from a listing's description. Verify location fields locally;
+  // use hierarchy IDs when available to narrow retrieval without losing valid matches.
   return body;
 }
 
-export async function searchProperties(input: PropertySearchInput) {
+export async function searchProperties(input: PropertySearchInput, signal?: AbortSignal) {
   const options = propertySearchSchema.parse(input);
-  const request = { endpoint: "/api/Property/ListProperties", method: "POST" as const, body: {
+  const request = { endpoint: "/api/Property/ListProperties", method: "POST" as const, signal, body: {
     ...criteriaToRequest(options.criteria), PropertyIncludes: { IncludeFeatures: true, IncludeBrokers: true, IncludeFeaturesByCategory: true },
     Lang: options.language, SequenceNmbr: options.page, MaxResponses: options.pageSize,
   } };

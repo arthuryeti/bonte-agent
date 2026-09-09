@@ -1,672 +1,590 @@
 "use client";
 
-import { useChat } from "@ai-sdk/react";
-import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  FormEvent,
-  KeyboardEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import type {
-  CrmChatMessage,
-  LeadView,
-  ScheduleFollowUpAction,
-} from "./chat-types";
-import {
-  LeadDrawer,
-  LeadResults,
-  ToolStatus,
-  type FollowUpValues,
-} from "./lead-results";
-import { PropertyDrawer, PropertyResults } from "./property-results";
+  AssistantRuntimeProvider,
+  ComposerPrimitive,
+  useExternalStoreRuntime,
+  type AppendMessage,
+  type ThreadMessageLike,
+} from "@assistant-ui/react";
+import { Thread } from "@/components/assistant-ui/elements/thread.aui";
+import { ThreadList } from "@/components/assistant-ui/elements/thread-list.aui";
+import { LeadResultsUI, PropertyResultsUI } from "@/components/crm-results";
+import { Button } from "@/components/ui/button";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { MenuIcon, LogOutIcon, XIcon } from "lucide-react";
 import { authClient } from "../lib/auth-client";
-import { WorkflowAttachments } from "./workflow-attachments";
-import { WorkflowPanel } from "./workflow-panel";
-import { EmailDraft } from "./email-draft";
+import {
+  attachmentAdapter,
+  requestJson,
+  streamReply,
+  toAssistantMessage,
+  type ChatDocument,
+} from "./assistant-adapter";
+import type { CrmChatMessage } from "./chat-types";
 
-const MarkdownMessage = dynamic(
-  () => import("./markdown-message").then((module) => module.MarkdownMessage),
-  { loading: () => <span className="markdown-loading-line" aria-hidden="true" /> }
-);
-
+type Chat = { id: string; title: string };
+type User = { name: string; email: string };
 const suggestions = [
-  { title: "Explore leads", description: "Catch up on your latest enquiries", prompt: "Show me the latest leads" },
-  { title: "Find a property", description: "Discover what’s available", prompt: "Find available properties" },
-  { title: "Research the market", description: "Get a property price estimate", prompt: "Market research: estimate a property's sale price" },
-  { title: "Plan follow-ups", description: "See who needs your attention", prompt: "Which broker follow-ups are overdue?" },
-];
+  {
+    title: "Find properties",
+    label: "Search by location, budget and features",
+    prompt: "Help me find available CRM properties that fit my requirements.",
+  },
+  {
+    title: "Review leads",
+    label: "Explore enquiries and contact history",
+    prompt: "Show the latest CRM leads and help me filter their enquiry and contact history.",
+  },
+  {
+    title: "Prepare an NDA",
+    label: "Draft a confidentiality agreement",
+    prompt: "Help me prepare an NDA using Bonte's template. Read any documents I attach and ask only for missing evidence or agreement terms.",
+  },
+  {
+    title: "Prepare a CMI",
+    label: "Draft a real estate mediation contract",
+    prompt: "Help me prepare a CMI using Bonte's template. Read any documents I attach and ask only for missing evidence or commercial terms.",
+  },
+  {
+    title: "Draft an email",
+    label: "Prepare a message with property details",
+    prompt: "Help me draft an email using verified property details and any attachments I select.",
+  },
+  {
+    title: "Plan viewings",
+    label: "Arrange property visits and check availability",
+    prompt: "Help me plan property viewings, including dates, participants, meeting points and travel time. Start with a proposal and check calendar availability when the details are ready.",
+  },
+  {
+    title: "Review documents",
+    label: "Understand uploads and spot missing information",
+    prompt: "Help me review my uploaded documents. Identify what they contain, summarize the relevant facts and flag missing or conflicting information. If there are no uploads yet, ask me to attach them.",
+  },
+  {
+    title: "Match a buyer",
+    label: "Search CRM and Idealista for a buyer",
+    prompt: "Help me match a buyer across CRM and Idealista using their stated requirements or a saved buyer brief. Ask which lead or buyer brief to use.",
+  },
+  {
+    title: "Manage buyer briefs",
+    label: "Save requirements for future property matching",
+    prompt: "Show my saved buyer briefs and help me create or update one with explicit requirements and preferences.",
+  },
+  {
+    title: "Create a property brochure",
+    label: "Generate a branded PDF for a listing",
+    prompt: "Help me create a branded property PDF brochure from an exact CRM listing.",
+  },
+  {
+    title: "Estimate an asking price",
+    label: "Compare similar homes on the market",
+    prompt: "Help me estimate a Portuguese home's sale asking price using comparable listings. Ask for the property reference, Idealista URL or missing property details before researching.",
+  },
+  {
+    title: "Check a contact",
+    label: "Look for an existing contact in lead history",
+    prompt: "Help me check whether a contact already appears in CRM lead history using their email, phone or name.",
+  },
+  {
+    title: "Register a lead",
+    label: "Capture an enquiry and check for duplicates",
+    prompt: "Help me register a new CRM lead. Collect the enquiry details and check for an existing contact before registration.",
+  },
+  {
+    title: "Audit lead follow-ups",
+    label: "Find enquiries that may need attention",
+    prompt: "Audit CRM lead follow-ups and show which enquiries need attention, with the recorded evidence and any gaps in contact history.",
+  },
+  {
+    title: "Manage follow-up tasks",
+    label: "Create reminders or update existing tasks",
+    prompt: "Show my Bonte follow-up tasks and help me create a reminder or update an existing task. Ask which action I want and collect a due time and timezone for new reminders.",
+  },
+  {
+    title: "Monitor leads",
+    label: "Set up recurring audits and notifications",
+    prompt: "Help me set up a recurring lead audit in Bonte. Ask for the cadence and broker or source scope, and show any existing monitors first.",
+  },
+  {
+    title: "Manage viewings",
+    label: "Review, book, reschedule or cancel visits",
+    prompt: "Show my saved viewing proposals and bookings, then ask which viewing and action I want help with.",
+  },
+  {
+    title: "Report CRM outcomes",
+    label: "Review won opportunities by broker and date",
+    prompt: "Help me report CRM won-opportunity outcomes by closing date and broker. Ask for the period and scope, and explain any missing dates or attribution.",
+  },
+  {
+    title: "Find a broker",
+    label: "Look up CRM agents and contact details",
+    prompt: "Help me find a CRM broker or agent and their verified contact details.",
+  },
+  {
+    title: "Revisit saved drafts",
+    label: "Continue editing emails, NDAs and CMIs",
+    prompt: "Show the saved email, NDA and CMI drafts in this conversation and help me choose one to revise.",
+  },
+  {
+    title: "View notifications",
+    label: "Check reminders, audit findings and workflow status",
+    prompt: "Show my saved Bonte notifications and the status of available workflows.",
+  },
+].map((suggestion) => ({
+  ...suggestion,
+  prompt: `${suggestion.prompt} Use the information already in this conversation, ask one focused question at a time for anything missing, and check any required setup before proceeding.`,
+}));
 
-const SESSION_STORAGE_KEY = "crm-assistant-session";
-const DEFAULT_CHAT_TITLE = "New conversation";
-const MAX_RECENT_CHATS = 50;
-const SESSION_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
+export default function ChatPage({ user }: { user: User }) {
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [sessionId, setSessionId] = useState("");
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const creating = useRef(false);
 
-interface ChatPageProps {
-  user: {
-    name: string;
-    email: string;
-  };
-}
+  function select(id: string) {
+    setSessionId(id);
+    try {
+      localStorage.setItem("crm-assistant-session", id);
+    } catch {
+      /* Storage is optional. */
+    }
+  }
 
-interface RecentChat {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-function createRecentChat(id = crypto.randomUUID()): RecentChat {
-  const now = new Date().toISOString();
-  return {
-    id,
-    title: DEFAULT_CHAT_TITLE,
-    createdAt: now,
-    updatedAt: now,
-  };
-}
-
-function isRecentChat(value: unknown): value is RecentChat {
-  if (!value || typeof value !== "object") return false;
-  const record = value as Record<string, unknown>;
-  return (
-    typeof record.id === "string" &&
-    SESSION_ID_PATTERN.test(record.id) &&
-    typeof record.title === "string" &&
-    typeof record.createdAt === "string" &&
-    typeof record.updatedAt === "string"
-  );
-}
-
-function sortRecentChats(chats: RecentChat[]): RecentChat[] {
-  return [...chats]
-    .sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))
-    .slice(0, MAX_RECENT_CHATS);
-}
-
-async function requestNewChat(sessionId?: string): Promise<RecentChat> {
-  const response = await fetch("/api/chats", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(sessionId ? { sessionId } : {}),
-  });
-  if (!response.ok) throw new Error("could not create chat");
-  const body = await response.json() as { chat?: unknown };
-  if (!isRecentChat(body.chat)) throw new Error("invalid chat response");
-  return body.chat;
-}
-
-function titleFromMessage(message: string): string {
-  const singleLine = message.replace(/\s+/g, " ").trim();
-  if (singleLine.length <= 64) return singleLine;
-  return `${singleLine.slice(0, 61).trimEnd()}…`;
-}
-
-function formatRecentTime(value: string): string {
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  const elapsed = Date.now() - date.getTime();
-  if (elapsed < 60_000) return "Now";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)}m`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)}h`;
-  if (elapsed < 172_800_000) return "Yesterday";
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-  }).format(date);
-}
-
-
-export default function ChatPage({ user }: ChatPageProps) {
-  const router = useRouter();
-  const [input, setInput] = useState("");
-  const [attachmentIds, setAttachmentIds] = useState<string[]>([]);
-  const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
-  const [sessionId, setSessionId] = useState(() => crypto.randomUUID());
-  const [recentChats, setRecentChats] = useState<RecentChat[]>([]);
-  const [hasLoadedWorkspace, setHasLoadedWorkspace] = useState(false);
-  const [isLoadingChat, setIsLoadingChat] = useState(false);
-  const [isCreatingChat, setIsCreatingChat] = useState(false);
-  const [isSigningOut, setIsSigningOut] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [selectedLead, setSelectedLead] = useState<string>();
-  const [selectedProperty, setSelectedProperty] = useState<LeadView["properties"][number]>();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const { messages, sendMessage, setMessages, status, error, stop, clearError } =
-    useChat<CrmChatMessage>();
-  const isWorking = status === "submitted" || status === "streaming";
-  const activeChat = useMemo(
-    () => recentChats.find((chat) => chat.id === sessionId),
-    [recentChats, sessionId]
-  );
-  const lastMessage = messages.at(-1);
-  const showStandaloneThinking = isWorking && lastMessage?.role !== "assistant";
-
-  useEffect(() => {
-    let cancelled = false;
-    const initialId = sessionId;
-
-    void (async () => {
-      let chats: RecentChat[] = [];
-      try {
-        const response = await fetch("/api/chats");
-        if (!response.ok) throw new Error("could not load chats");
-        const body = await response.json() as { chats?: unknown };
-        if (Array.isArray(body.chats)) chats = body.chats.filter(isRecentChat);
-        if (chats.length === 0) {
-          chats = [await requestNewChat(initialId)];
-        }
-      } catch {
-        chats = [createRecentChat(initialId)];
-      }
-
-      if (cancelled) return;
-      const storedId = window.localStorage.getItem(SESSION_STORAGE_KEY);
-      const activeId = storedId && chats.some((chat) => chat.id === storedId)
-        ? storedId
-        : chats[0].id;
-      setSessionId(activeId);
-      setRecentChats(sortRecentChats(chats));
-      setHasLoadedWorkspace(true);
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!hasLoadedWorkspace) return;
-    window.localStorage.setItem(SESSION_STORAGE_KEY, sessionId);
-  }, [hasLoadedWorkspace, sessionId]);
-
-  useEffect(() => {
-    if (!hasLoadedWorkspace) return;
-    let cancelled = false;
-    setIsLoadingChat(true);
-    setMessages([]);
-
-    void fetch(
-      `/api/chat?sessionId=${encodeURIComponent(sessionId)}`,
-    )
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((body: { messages?: CrmChatMessage[] }) => {
-        if (!cancelled && Array.isArray(body.messages)) setMessages(body.messages);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setIsLoadingChat(false);
+  async function newChat() {
+    if (creating.current) return;
+    creating.current = true;
+    setError("");
+    try {
+      const { chat } = await requestJson<{ chat: Chat }>("/api/chats", {
+        method: "POST",
       });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [hasLoadedWorkspace, sessionId, setMessages]);
+      setChats((current) => [chat, ...current]);
+      select(chat.id);
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Could not create a conversation.",
+      );
+    } finally {
+      creating.current = false;
+    }
+  }
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages, status]);
-
-  const touchActiveChat = useCallback((message?: string) => {
-    setRecentChats((current) => {
-      const now = new Date().toISOString();
-      const existing = current.find((chat) => chat.id === sessionId);
-      const nextChat: RecentChat = {
-        ...(existing ?? createRecentChat(sessionId)),
-        title:
-          message && (!existing || existing.title === DEFAULT_CHAT_TITLE)
-            ? titleFromMessage(message)
-            : existing?.title ?? DEFAULT_CHAT_TITLE,
-        updatedAt: now,
-      };
-      return sortRecentChats([
-        nextChat,
-        ...current.filter((chat) => chat.id !== sessionId),
-      ]);
-    });
-  }, [sessionId]);
-
-  const submitMessage = useCallback((
-    text: string,
-    action?: ScheduleFollowUpAction
-  ) => {
-    const trimmedText = text.trim() || (attachmentIds.length ? "Please read the attached documents." : "");
-    if (!trimmedText || isWorking || isUploadingDocuments || isLoadingChat || isCreatingChat || !hasLoadedWorkspace) return;
-
-    clearError();
-    touchActiveChat(trimmedText);
-    void sendMessage(
-      { parts: [
-        { type: "text", text: trimmedText },
-        ...attachmentIds.map((id) => ({ type: "data-source-document" as const, id, data: { attachmentId: id } })),
-      ] },
-      { body: { sessionId, attachmentIds, ...(action ? { action } : {}) } }
-    );
-    setInput("");
-  }, [clearError, isWorking, sendMessage, sessionId, touchActiveChat, attachmentIds, isUploadingDocuments, isLoadingChat, isCreatingChat, hasLoadedWorkspace]);
-
-  const createNewChat = useCallback(async () => {
-    if (messages.length === 0 && attachmentIds.length === 0 && activeChat?.title === DEFAULT_CHAT_TITLE) {
-      setSidebarOpen(false);
-      return;
-    }
-
-    stop();
-    clearError();
-    setIsCreatingChat(true);
-    try {
-      const chat = await requestNewChat();
-      setRecentChats((current) => sortRecentChats([chat, ...current]));
-      setSessionId(chat.id);
-      setMessages([]);
-      setInput("");
-      setSelectedLead(undefined);
-      setSelectedProperty(undefined);
-      setSidebarOpen(false);
-    } catch {
-      const chat = createRecentChat();
-      setRecentChats((current) => sortRecentChats([chat, ...current]));
-      setSessionId(chat.id);
-      setMessages([]);
-      setInput("");
-      setSelectedLead(undefined);
-      setSelectedProperty(undefined);
-      setSidebarOpen(false);
-    } finally {
-      setIsCreatingChat(false);
-    }
-  }, [activeChat?.title, attachmentIds.length, clearError, messages.length, setMessages, stop]);
-
-  const signOut = useCallback(async () => {
-    setIsSigningOut(true);
-    try {
-      const result = await authClient.signOut();
-      if (result.error) return;
-      router.replace("/login");
-      router.refresh();
-    } catch {
-      // Leave the user signed in and make the control available for a retry.
-    } finally {
-      setIsSigningOut(false);
-    }
-  }, [router]);
-
-  const selectChat = useCallback((chatId: string) => {
-    if (chatId === sessionId) {
-      setSidebarOpen(false);
-      return;
-    }
-    stop();
-    clearError();
-    setMessages([]);
-    setSessionId(chatId);
-    setInput("");
-    setSelectedLead(undefined);
-    setSelectedProperty(undefined);
-    setSidebarOpen(false);
-  }, [clearError, sessionId, setMessages, stop]);
-
-  const closeLead = useCallback(() => setSelectedLead(undefined), []);
-  const closeProperty = useCallback(() => setSelectedProperty(undefined), []);
-
-  const selectLead = useCallback((lead: LeadView) => {
-    setSelectedProperty(undefined);
-    setSelectedLead(lead.id);
-  }, []);
-
-  const selectProperty = useCallback((property: LeadView["properties"][number]) => {
-    setSelectedLead(undefined);
-    setSelectedProperty({ id: property.id, reference: property.reference });
-  }, []);
-
-
-  const scheduleFollowUp = useCallback((
-    lead: LeadView,
-    values: FollowUpValues
-  ) => {
-    const date = new Date(values.scheduledFor);
-    const readableDate = new Intl.DateTimeFormat("en-GB", {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(date);
-    const contactName = lead.contact?.name || lead.title;
-    const displayText = [
-      `Schedule a follow-up for ${contactName} on ${readableDate}.`,
-      values.note ? `Note: ${values.note}` : undefined,
-    ].filter(Boolean).join(" ");
-
-    closeLead();
-    submitMessage(displayText, {
-      actionId: crypto.randomUUID(),
-      type: "schedule_follow_up",
-      leadId: lead.id,
-      leadTitle: lead.title,
-      contactName: lead.contact?.name,
-      scheduledFor: values.scheduledFor,
-      note: values.note,
-    });
-  }, [closeLead, submitMessage]);
-
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    submitMessage(input);
-  };
-
-  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      submitMessage(input);
-    }
-  };
+    const controller = new AbortController();
+    setError("");
+    void requestJson<{ chats: Chat[] }>("/api/chats", {
+      signal: controller.signal,
+    })
+      .then(async ({ chats }) => {
+        if (controller.signal.aborted) return;
+        setChats(chats);
+        let saved = "";
+        try {
+          saved = localStorage.getItem("crm-assistant-session") || "";
+        } catch {
+          /* Storage is optional. */
+        }
+        if (chats.length)
+          select(chats.find((chat) => chat.id === saved)?.id || chats[0].id);
+        else {
+          const { chat } = await requestJson<{ chat: Chat }>("/api/chats", {
+            method: "POST",
+            signal: controller.signal,
+          });
+          if (!controller.signal.aborted) {
+            setChats([chat]);
+            select(chat.id);
+          }
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted)
+          setError(
+            error instanceof Error
+              ? error.message
+              : "Could not load conversations.",
+          );
+      });
+    return () => controller.abort();
+  }, [retry]);
 
   return (
-    <main className="app-shell">
-      <div className="workspace">
-        {sidebarOpen ? (
-          <button
-            className="sidebar-overlay"
-            type="button"
-            aria-label="Close recent chats"
-            onClick={() => setSidebarOpen(false)}
-          />
-        ) : null}
-
-        <aside
-          className={`chat-sidebar${sidebarOpen ? " open" : ""}`}
-          id="recent-chats"
-          aria-label="Recent chats"
-        >
-          <header className="sidebar-header">
-            <div className="sidebar-brand">
-              <span className="mark" aria-hidden="true">B</span>
-              <div>
-                <p className="title">bonte</p>
-                <p>Your workspace</p>
-              </div>
-            </div>
-            <button
-              className="sidebar-close"
-              type="button"
-              onClick={() => setSidebarOpen(false)}
-              aria-label="Close recent chats"
-            >×</button>
-          </header>
-
-          <button
-            className="sidebar-new-chat"
-            type="button"
-            onClick={createNewChat}
-            disabled={!hasLoadedWorkspace || isCreatingChat}
+    <TooltipProvider>
+      <div className="flex h-dvh flex-col">
+        {error && (
+          <div
+            role="alert"
+            className="bg-destructive/10 text-destructive flex items-center justify-center gap-3 p-3 text-sm"
           >
-            <span aria-hidden="true">＋</span>
-            New chat
-          </button>
-
-          <div className="chat-history">
-            {hasLoadedWorkspace ? <WorkflowPanel refreshKey={`${sessionId}:${status}`} /> : null}
-            <div className="chat-history-heading">
-              <p>Recent conversations</p>
-            </div>
-            <nav className="chat-history-list" aria-label="Conversation history">
-              {recentChats.map((chat) => (
-                <button
-                  className={`chat-history-item${chat.id === sessionId ? " active" : ""}`}
-                  type="button"
-                  key={chat.id}
-                  onClick={() => selectChat(chat.id)}
-                  aria-current={chat.id === sessionId ? "page" : undefined}
-                >
-                  <span className="chat-item-copy">
-                    <strong>{chat.title}</strong>
-                    <small>{formatRecentTime(chat.updatedAt)}</small>
-                  </span>
-                </button>
-              ))}
-            </nav>
-          </div>
-
-          <footer className="sidebar-account">
-            <span className="account-avatar" aria-hidden="true">
-              {(user.name || user.email).slice(0, 1).toUpperCase()}
-            </span>
-            <span className="account-copy">
-              <strong>{user.name}</strong>
-              <small>{user.email}</small>
-            </span>
-            <button
-              type="button"
-              onClick={signOut}
-              disabled={isSigningOut}
-              aria-label="Sign out"
-              title="Sign out"
+            {error}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetry((value) => value + 1)}
             >
-              {isSigningOut ? "…" : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" /></svg>}
-            </button>
-          </footer>
-        </aside>
-
-        <section className={`chat-panel${messages.length === 0 && !isWorking ? " empty" : ""}`} aria-label="CRM assistant chat">
-          <header className="topbar">
-            <div className="topbar-chat">
-              <button
-                className="sidebar-toggle"
-                type="button"
-                aria-controls="recent-chats"
-                aria-expanded={sidebarOpen}
-                aria-label="Open recent chats"
-                onClick={() => setSidebarOpen(true)}
-              >
-                <i /><i /><i />
-              </button>
-              <p className="title">{activeChat?.title || DEFAULT_CHAT_TITLE}</p>
-            </div>
-            <span className="status"><span aria-hidden="true" /> {isWorking ? "Working…" : "CRM Assistant"}</span>
-          </header>
-
-          <div className="conversation" aria-live="polite">
-            <div className="conversation-content">
-              {isLoadingChat || !hasLoadedWorkspace ? (
-                <div className="chat-loading" aria-label="Loading conversation">
-                  <i /><i /><i />
-                </div>
-              ) : messages.length === 0 && !isWorking ? (
-                <div className="welcome">
-                  <div className="welcome-mark" aria-hidden="true">B</div>
-                  <h1>How can I help you today?</h1>
-                  <p>A little less admin. More time for your clients.</p>
-                  <div className="suggestions">
-                    {suggestions.map((suggestion) => (
-                      <button
-                        key={suggestion.title}
-                        type="button"
-                        onClick={() => submitMessage(suggestion.prompt)}
-                        disabled={isUploadingDocuments || isCreatingChat}
-                      >
-                        <span className="suggestion-copy"><strong>{suggestion.title}</strong><small>{suggestion.description}</small></span>
-                        <span aria-hidden="true">↗</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="messages">
-                  {messages.map((message, messageIndex) => {
-                    const leadListPart = message.parts.find(
-                      (part) => part.type === "data-lead-list"
-                    );
-                    const propertyListPart = message.parts.find(
-                      (part) => part.type === "data-property-list"
-                    );
-                    const toolStatusParts = message.parts.filter(
-                      (part) => part.type === "data-tool-status"
-                    );
-                    const hasBubbleContent = message.parts.some(
-                      (part) =>
-                        part.type === "data-lead-list" ||
-                        part.type === "data-property-list" ||
-                        part.type === "data-attachment" ||
-                        part.type === "data-source-document" ||
-                        part.type === "data-email-draft" ||
-                        (part.type === "text" && part.text.trim().length > 0)
-                    );
-                    const showThinkingBubble =
-                      message.role === "assistant" &&
-                      isWorking &&
-                      messageIndex === messages.length - 1 &&
-                      !hasBubbleContent;
-                    const hasRichResult = Boolean(leadListPart || propertyListPart || message.parts.some((part) => part.type === "data-email-draft"));
-                    return (
-                      <article
-                        className={`message ${message.role}${hasRichResult ? " has-rich-result" : ""}${showThinkingBubble ? " thinking" : ""}`}
-                        key={message.id}
-                      >
-                        <div className="message-label">
-                          {message.role === "user" ? "You" : <><span className="message-mark" aria-hidden="true">B</span> Bonte</>}
-                        </div>
-                        {hasBubbleContent || showThinkingBubble ? (
-                          <div className="bubble">
-                            {showThinkingBubble ? (
-                              <><i /><i /><i /></>
-                            ) : null}
-                            {message.parts.map((part, index) => {
-                              if (part.type === "text") {
-                                return part.text ? (
-                                  message.role === "assistant" ? (
-                                    <MarkdownMessage
-                                      content={part.text}
-                                      key={`${message.id}-text-${index}`}
-                                    />
-                                  ) : (
-                                    <p key={`${message.id}-text-${index}`}>{part.text}</p>
-                                  )
-                                ) : null;
-                              }
-                              if (part.type === "data-lead-list") {
-                                return (
-                                  <LeadResults
-                                    data={part.data}
-                                    key={part.id || `${message.id}-leads-${index}`}
-                                    onSelect={selectLead}
-                                  />
-                                );
-                              }
-                              if (part.type === "data-property-list") {
-                                return (
-                                  <PropertyResults
-                                    data={part.data}
-                                    key={part.id || `${message.id}-properties-${index}`}
-                                    onSelect={selectProperty}
-                                  />
-                                );
-                              }
-                              if (part.type === "data-email-draft") {
-                                return <EmailDraft data={part.data} key={part.id || `${message.id}-draft-${index}`} />;
-                              }
-                              if (part.type === "data-source-document") {
-                                return (
-                                  <a className="pdf-download" href={`/api/attachments?id=${encodeURIComponent(part.data.attachmentId)}`}
-                                    key={part.id || `${message.id}-source-${index}`}>
-                                    Supporting document {index}
-                                  </a>
-                                );
-                              }
-                              if (part.type === "data-attachment") {
-                                return (
-                                  <a
-                                    className="pdf-download"
-                                    href={`/api/files?name=${encodeURIComponent(part.data.fileName)}`}
-                                    download={part.data.fileName}
-                                    key={part.id || `${message.id}-file-${index}`}
-                                  >
-                                    Download {part.data.fileName}
-                                  </a>
-                                );
-                              }
-                              return null;
-                            })}
-                          </div>
-                        ) : null}
-                        {toolStatusParts.map((part, index) => (
-                          <ToolStatus
-                            data={part.data}
-                            key={part.id || `${message.id}-tool-${index}`}
-                          />
-                        ))}
-                      </article>
-                    );
-                  })}
-                  {showStandaloneThinking ? (
-                    <article className="message assistant thinking" aria-label="Assistant is thinking">
-                      <div className="message-label"><span className="message-mark" aria-hidden="true">B</span> Bonte</div>
-                      <div className="bubble"><i /><i /><i /></div>
-                      <ToolStatus data={{ status: "running", label: "Thinking…" }} />
-                    </article>
-                  ) : null}
-                </div>
-              )}
-
-              {error ? (
-                <div className="error" role="alert">
-                  <span>Something went wrong. Please try again.</span>
-                  <button type="button" onClick={clearError}>Dismiss</button>
-                </div>
-              ) : null}
-              <div ref={messagesEndRef} />
-            </div>
+              Retry
+            </Button>
           </div>
-
-          <div className="composer-wrap">
-            <div className="composer-inner">
-              <form className="composer" onSubmit={handleSubmit}>
-                <textarea
-                  aria-label="Message the CRM assistant"
-                  placeholder="Ask about leads, properties, or your next move…"
-                  rows={2}
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={handleKeyDown}
-                  disabled={isWorking || isLoadingChat || isCreatingChat}
-                />
-                <div className="composer-toolbar">
-                  {hasLoadedWorkspace ? <WorkflowAttachments key={sessionId} sessionId={sessionId} disabled={isWorking || isLoadingChat || isCreatingChat} onChange={setAttachmentIds} onBusyChange={setIsUploadingDocuments} /> : <span />}
-                  {isWorking ? (
-                    <button className="send stop" type="button" onClick={stop} aria-label="Stop response">
-                      <span aria-hidden="true" />
-                    </button>
-                  ) : (
-                    <button className="send" type="submit" disabled={(!input.trim() && attachmentIds.length === 0) || !hasLoadedWorkspace || isLoadingChat || isCreatingChat || isUploadingDocuments} aria-label="Send message">
-                      <span aria-hidden="true">↑</span>
-                    </button>
-                  )}
-                </div>
-              </form>
-              <p className="hint">Enter to send · Shift + Enter for a new line</p>
-            </div>
-          </div>
-        </section>
+        )}
+        {sessionId ? (
+          <ChatWorkspace
+            key={sessionId}
+            {...{ user, sessionId, chats, newChat, select }}
+            onTitle={(title) =>
+              setChats((current) =>
+                current.map((chat) =>
+                  chat.id === sessionId ? { ...chat, title } : chat,
+                ),
+              )
+            }
+          />
+        ) : (
+          !error && (
+            <main
+              role="status"
+              className="grid h-dvh place-items-center text-sm text-muted-foreground"
+            >
+              Loading conversations…
+            </main>
+          )
+        )}
       </div>
+    </TooltipProvider>
+  );
+}
 
-      {selectedLead ? (
-        <LeadDrawer
-          key={selectedLead}
-          leadId={selectedLead}
-          disabled={isWorking}
-          onClose={closeLead}
-          onSelectProperty={selectProperty}
-          onSchedule={scheduleFollowUp}
-        />
-      ) : null}
-      {selectedProperty ? (
-        <PropertyDrawer
-          key={`${selectedProperty.id || ""}:${selectedProperty.reference || ""}`}
-          identity={selectedProperty}
-          onClose={closeProperty}
-        />
-      ) : null}
-    </main>
+function ChatWorkspace({
+  user,
+  sessionId,
+  chats,
+  newChat,
+  select,
+  onTitle,
+}: {
+  user: User;
+  sessionId: string;
+  chats: Chat[];
+  newChat: () => Promise<void>;
+  select: (id: string) => void;
+  onTitle: (title: string) => void;
+}) {
+  const router = useRouter();
+  const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [notice, setNotice] = useState("");
+  const [running, setRunning] = useState(false);
+  const [sidebar, setSidebar] = useState(false);
+  const [tooManyAttachments, setTooManyAttachments] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const lifetime = useRef(new AbortController());
+  const turn = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    setLoading(true);
+    setLoadError(false);
+    setNotice("");
+    void Promise.all([
+      requestJson<{ messages: CrmChatMessage[] }>(
+        `/api/chat?sessionId=${encodeURIComponent(sessionId)}`,
+        { signal: controller.signal },
+      ),
+      requestJson<{ attachments: ChatDocument[] }>(
+        `/api/attachments?sessionId=${encodeURIComponent(sessionId)}`,
+        { signal: controller.signal },
+      ),
+    ])
+      .then(([history, documents]) => {
+        if (!controller.signal.aborted)
+          setMessages(
+            history.messages.map((message) =>
+              toAssistantMessage(message, documents.attachments),
+            ),
+          );
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setLoadError(true);
+          setNotice(
+            error instanceof Error
+              ? error.message
+              : "Could not load conversation.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => {
+      controller.abort();
+      turn.current?.abort();
+    };
+  }, [sessionId, retry]);
+
+  const attachments = useMemo(
+    () =>
+      attachmentAdapter(
+        sessionId,
+        () => lifetime.current.signal,
+        setNotice,
+      ),
+    [sessionId],
+  );
+
+  async function onNew(message: AppendMessage) {
+    if (turn.current || loading || loadError) return;
+    const controller = new AbortController();
+    turn.current = controller;
+    const id = crypto.randomUUID();
+    const text =
+      message.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n")
+        .trim() || "Please review the attached documents.";
+    const attachmentIds = (message.attachments ?? []).map(
+      (attachment) => attachment.id,
+    );
+    const userMessage: ThreadMessageLike = {
+      ...message,
+      id,
+      content: [{ type: "text", text }],
+    };
+    let reply: ThreadMessageLike = {
+      id: `assistant:${id}`,
+      role: "assistant",
+      content: [],
+      status: { type: "running" },
+    };
+    const preceding = [...messages, userMessage];
+    setMessages([...preceding, reply]);
+    setRunning(true);
+    setNotice("");
+    if (!messages.length) onTitle(text.slice(0, 80));
+    try {
+      const wireMessage: CrmChatMessage = {
+        id,
+        role: "user",
+        parts: [
+          { type: "text", text },
+          ...attachmentIds.map((attachmentId) => ({
+            type: "data-source-document" as const,
+            data: { attachmentId },
+          })),
+        ],
+      };
+      for await (const update of streamReply(
+        sessionId,
+        wireMessage,
+        attachmentIds,
+        controller.signal,
+      )) {
+        if (controller.signal.aborted) break;
+        reply = {
+          ...update,
+          id: `assistant:${id}`,
+          status: { type: "running" },
+        };
+        setMessages([...preceding, reply]);
+      }
+      reply = {
+        ...reply,
+        status: controller.signal.aborted
+          ? { type: "incomplete", reason: "cancelled" }
+          : { type: "complete", reason: "stop" },
+      };
+    } catch (error) {
+      reply = {
+        ...reply,
+        status: controller.signal.aborted
+          ? { type: "incomplete", reason: "cancelled" }
+          : {
+              type: "incomplete",
+              reason: "error",
+              error:
+                error instanceof Error ? error.message : "The request failed.",
+            },
+      };
+    } finally {
+      setMessages([...preceding, reply]);
+      setRunning(false);
+      turn.current = null;
+    }
+  }
+
+  const runtime = useExternalStoreRuntime<ThreadMessageLike>({
+    messages,
+    convertMessage: (message) => message,
+    isRunning: running,
+    isLoading: loading,
+    isDisabled: loading || loadError,
+    isSendDisabled: tooManyAttachments,
+    suggestions,
+    onNew,
+    onCancel: async () => {
+      turn.current?.abort();
+    },
+    adapters: {
+      attachments,
+      threadList: {
+        threadId: sessionId,
+        threads: chats.map((chat) => ({ ...chat, status: "regular" as const })),
+        onSwitchToNewThread: newChat,
+        onSwitchToThread: select,
+      },
+    },
+  });
+
+  useEffect(
+    () =>
+      runtime.thread.composer.unstable_on("attachmentAddError", (event) =>
+        setNotice(event.message),
+      ),
+    [runtime],
+  );
+  useEffect(
+    () =>
+      runtime.thread.composer.subscribe(() =>
+        setTooManyAttachments(
+          runtime.thread.composer.getState().attachments.length > 12,
+        ),
+      ),
+    [runtime],
+  );
+
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <LeadResultsUI />
+      <PropertyResultsUI />
+      <div
+        className="flex min-h-0 flex-1 bg-background text-foreground"
+        onKeyDown={(event) => {
+          if (event.key === "Escape") setSidebar(false);
+        }}
+      >
+        {sidebar && (
+          <button
+            aria-label="Close conversations"
+            className="fixed inset-0 z-20 bg-black/20 md:hidden"
+            onClick={() => setSidebar(false)}
+          />
+        )}
+        <aside
+          id="conversations"
+          aria-label="Conversations"
+          className={`${sidebar ? "flex" : "hidden"} fixed inset-y-0 left-0 z-30 w-64 shrink-0 flex-col border-r bg-muted/40 p-3 backdrop-blur-xl md:static md:flex`}
+        >
+          <div className="mb-5 flex items-center justify-between px-2 py-3">
+            <span className="font-semibold tracking-tight">Bonte</span>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Close conversations"
+              className="md:hidden"
+              onClick={() => setSidebar(false)}
+            >
+              <XIcon />
+            </Button>
+          </div>
+          <nav className="min-h-0 flex-1 overflow-y-auto">
+            <ThreadList />
+          </nav>
+          <div className="mt-4 flex items-center gap-2 border-t pt-4">
+            <div className="min-w-0 flex-1 px-2 text-xs">
+              <p className="truncate font-medium">{user.name}</p>
+              <p className="truncate text-muted-foreground">{user.email}</p>
+            </div>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Sign out"
+              onClick={async () => {
+                try {
+                  const result = await authClient.signOut();
+                  if (result.error) throw new Error(result.error.message);
+                  router.replace("/login");
+                  router.refresh();
+                } catch {
+                  setNotice("Could not sign out. Please try again.");
+                }
+              }}
+            >
+              <LogOutIcon />
+            </Button>
+          </div>
+        </aside>
+        <main className="flex min-w-0 flex-1 flex-col">
+          <header className="flex min-h-14 flex-wrap items-center gap-3 border-b px-4 py-2 text-sm">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Open conversations"
+              aria-controls="conversations"
+              aria-expanded={sidebar}
+              className="md:hidden"
+              onClick={() => setSidebar(true)}
+            >
+              <MenuIcon />
+            </Button>
+            <span className="flex-1 whitespace-nowrap font-medium">
+              CRM Assistant
+            </span>
+          </header>
+          {notice && (
+            <div
+              role="alert"
+              className="flex items-center gap-3 border-b bg-muted px-4 py-2 text-sm"
+            >
+              <span className="flex-1">{notice}</span>
+              {loadError && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRetry((value) => value + 1)}
+                >
+                  Retry
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Dismiss notification"
+                onClick={() => setNotice("")}
+              >
+                <XIcon />
+              </Button>
+            </div>
+          )}
+          {tooManyAttachments && (
+            <p
+              role="alert"
+              className="border-b px-4 py-2 text-sm text-destructive"
+            >
+              Attach up to 12 documents per message. Remove a file to send.
+            </p>
+          )}
+          <ComposerPrimitive.AttachmentDropzone className="group relative min-h-0 flex-1">
+            <Thread />
+            <div className="pointer-events-none absolute inset-3 z-10 hidden items-center justify-center rounded-2xl border-2 border-dashed border-ring bg-background/95 text-center group-data-[dragging=true]:flex">
+              <p>
+                Drop documents here
+                <br />
+                <span className="text-sm text-muted-foreground">
+                  PDF, DOCX or images · up to 15 MB each
+                </span>
+              </p>
+            </div>
+          </ComposerPrimitive.AttachmentDropzone>
+        </main>
+      </div>
+    </AssistantRuntimeProvider>
   );
 }

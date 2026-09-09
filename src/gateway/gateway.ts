@@ -138,11 +138,11 @@ class AgentTraceCallback extends BaseCallbackHandler {
       this.documentToolOutputs.push(output);
     }
 
-    if (toolName === "save_email_draft" || toolName === "list_document_drafts") {
+    if (toolName === "save_email_draft" || toolName === "list_document_drafts" || toolName === "prepare_buyer_shortlist") {
       this.emailDraftOutputs.push(...compactEmailDraftView(output));
     }
 
-    if (["call_crm_api", "search_crm_properties", "get_verified_property", "query_crm_leads", "match_crm_properties_to_buyer", "match_saved_buyer"].includes(toolName)) {
+    if (["call_crm_api", "search_crm_properties", "get_verified_property", "query_crm_leads", "match_crm_properties_to_buyer", "match_saved_buyer", "get_buyer_matches"].includes(toolName)) {
       const leadList = normalizeLeadListToolOutput(output);
       if (leadList) {
         this.leadListOutputs.push(leadList);

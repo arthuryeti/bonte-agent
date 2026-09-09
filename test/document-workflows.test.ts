@@ -6,7 +6,9 @@ import { tmpdir } from "node:os";
 import PizZip from "pizzip";
 import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream, StandardFonts } from "pdf-lib";
 import { MemoryWorkflowStore, setWorkflowStore } from "../src/workflows/store.js";
-import { attachmentPrompt, deleteAttachment, getAttachment, listAttachments, purgeExpiredAttachments, readAttachment, saveGeneratedAttachment, uploadAttachment, validateDocxArchive, type WorkflowAttachment } from "../src/workflows/documents-attachments.js";
+import { attachmentCategories, attachmentPrompt, classifyAttachment, deleteAttachment, getAttachment, listAttachments, purgeExpiredAttachments, readAttachment, saveGeneratedAttachment, uploadAttachment, validateDocxArchive, type WorkflowAttachment } from "../src/workflows/documents-attachments.js";
+import { documentWorkflowTools } from "../src/tools/document-workflows.js";
+import { runWithWorkflowContext } from "../src/workflows/context.js";
 import { documentCapabilities, generateNdaDraft, listDocumentDrafts, loadNdaConfig, ndaConfigSchema, renderNdaDocx, renderNdaPdfForm, saveEmailDraft, updateNdaIntake, validateNdaFacts, type NdaFact } from "../src/workflows/documents.js";
 import { ensureTestS3 } from "./s3-harness.js";
 
@@ -78,6 +80,80 @@ test("uploads retain readable document evidence and enforce workspace, actor and
   assert.ok(!prompt.includes("Example Holdings"), "The prompt contains metadata only, not private extracted text.");
 });
 
+
+test("uncategorized uploads can be classified from evidence while intake still asks for missing choices", async () => {
+  await configure();
+  const partyQuote = "Party legal name: Example Holdings Ltd";
+  const transactionQuote = "Transaction purpose: Purchase of property TEST123";
+  const uploaded = await uploadAttachment(context, { fileName: "scan.docx", mimeType: mime, bytes: docx(`${partyQuote}\n${transactionQuote}`) });
+  assert.equal(uploaded.category, "other");
+  assert.deepEqual(attachmentCategories(uploaded), []);
+  const partyPage = uploaded.pages.find((page) => page.text.includes(partyQuote))!.page;
+  const transactionPage = uploaded.pages.find((page) => page.text.includes(transactionQuote))!.page;
+  const input = { attachmentId: uploaded.id, classifications: [
+    { category: "party" as const, page: partyPage, quote: partyQuote },
+    { category: "party" as const, page: partyPage, quote: "Example Holdings Ltd" },
+    { category: "transaction" as const, page: transactionPage, quote: transactionQuote },
+  ] };
+  const facts: NdaFact[] = [
+    { key: "party_name", value: "Example Holdings Ltd", source: { type: "document", attachmentId: uploaded.id, page: partyPage, quote: partyQuote } },
+    { key: "transaction", value: "Purchase of property TEST123", source: { type: "document", attachmentId: uploaded.id, page: transactionPage, quote: transactionQuote } },
+  ];
+  assert.ok(validateNdaFacts(config, facts, [uploaded]).some((issue) => issue.includes("party identification")));
+  const classify = documentWorkflowTools.find((tool) => tool.name === "classify_workflow_document")!;
+  const result = JSON.parse(await runWithWorkflowContext(context, () => classify.invoke(input)) as string);
+  assert.deepEqual(result.categories, ["party", "transaction"]);
+  assert.ok(!("classifications" in result), "Metadata summaries must not expose source quotations.");
+  const retained = await getAttachment(context, uploaded.id, true);
+  assert.deepEqual(retained.classifications, input.classifications);
+  const intake = await updateNdaIntake(context, { facts });
+  assert.equal(intake.status, "needs_input");
+  assert.deepEqual("issues" in intake && intake.issues, ["Missing agreement language."]);
+  const ready = await updateNdaIntake(context, { facts: [{ key: "language", value: "English", source: { type: "agreement", userStatement: "Please use English." } }] });
+  assert.equal(ready.status, "ready_to_draft");
+  assert.ok(!(await attachmentPrompt(context, [uploaded.id])).includes("Example Holdings"));
+  await classifyAttachment(context, { attachmentId: uploaded.id, classifications: [] });
+  assert.deepEqual(attachmentCategories(await getAttachment(context, uploaded.id)), []);
+  assert.equal((await updateNdaIntake(context)).status, "needs_input");
+});
+
+test("classification accepts repeated roles and validates every quote before saving", async () => {
+  const uploaded = await uploadAttachment(context, { fileName: "scan.docx", mimeType: mime, bytes: docx("PASSEPORT TEST-PASSPORT-123") });
+  const classifications = ["PASSEPORT", "TEST-PASSPORT-123"].map((quote) => ({
+    category: "party" as const, page: uploaded.pages.find((page) => page.text.includes(quote))!.page, quote,
+  }));
+  const classify = documentWorkflowTools.find((tool) => tool.name === "classify_workflow_document")!;
+  const invoke = (items: typeof classifications) => runWithWorkflowContext(context, async () =>
+    JSON.parse(await classify.invoke({ attachmentId: uploaded.id, classifications: items }) as string));
+  const result = await invoke(classifications);
+  assert.deepEqual(result.categories, ["party"]);
+  assert.deepEqual((await getAttachment(context, uploaded.id)).classifications, classifications);
+  for (const invalid of [{ ...classifications[1], quote: "Invented evidence" }, { ...classifications[1], page: 999 }]) {
+    const rejected = await invoke([classifications[0], invalid]);
+    assert.equal(rejected.success, false);
+    assert.match(rejected.message, /exact quote/);
+    assert.deepEqual((await getAttachment(context, uploaded.id)).classifications, classifications);
+  }
+  const retained = await getAttachment(context, uploaded.id);
+  const requiresTwo = { ...config, requiredDocuments: [{ category: "party" as const, label: "party identification", minimum: 2 }] };
+  assert.ok(validateNdaFacts(requiresTwo, [], [retained]).some((issue) => issue.includes("2 readable party identification document(s); 1 available")));
+});
+
+test("classification rejects unsupported evidence, foreign documents, generated drafts and stale writes", async (t) => {
+  const { party } = await evidence();
+  const input = { attachmentId: party.id, classifications: [{ category: "party" as const, page: 1, quote: "Party legal name: Example Holdings Ltd" }] };
+  await assert.rejects(() => classifyAttachment(context, { ...input, classifications: [{ ...input.classifications[0], quote: "Invented evidence" }] }), /exact quote/);
+  await assert.rejects(() => classifyAttachment(context, { ...input, classifications: [{ ...input.classifications[0], page: 999 }] }), /readable/);
+  for (const foreign of [{ workspaceId: "other" }, { actorId: "other" }, { conversationId: "other" }]) {
+    await assert.rejects(() => classifyAttachment({ ...context, ...foreign }, input), /not found/);
+  }
+  const generated = await saveGeneratedAttachment(context, { fileName: "draft.txt", mimeType: "text/plain", bytes: Buffer.from("Party legal name: Example Holdings Ltd") });
+  await assert.rejects(() => classifyAttachment(context, { ...input, attachmentId: generated.id }), /Generated documents/);
+  assert.equal((await getAttachment(context, party.id)).classifications, undefined);
+  t.mock.method(store, "compareAndSet", async () => false);
+  await assert.rejects(() => classifyAttachment(context, input), /document changed/);
+  assert.equal((await getAttachment(context, party.id)).classifications, undefined);
+});
 
 test("missing S3 configuration is a setup error and does not write local files", async () => {
   delete process.env.BONTE_S3_BUCKET;
@@ -161,11 +237,16 @@ test("deletion and retention remove document bytes and extracted evidence", asyn
   assert.equal(await store.get(context.workspaceId, "nda-intake", context.conversationId), null);
 });
 
-test("NDA defaults to the exact Bonte PDF and still requires both supporting document categories", async () => {
+test("NDA requires party evidence by default and follows custom template document requirements", async () => {
   const capabilities = await documentCapabilities();
   assert.equal(capabilities.nda.status, "configured");
   assert.deepEqual(capabilities.nda.outputFormats, ["editable PDF"]);
-  assert.equal((await updateNdaIntake(context)).status, "needs_input");
+  assert.deepEqual(capabilities.nda.requiredDocuments?.map((item) => item.category), ["party"]);
+  assert.deepEqual(capabilities.cmi?.requiredDocuments.map((item) => item.category), ["party", "transaction"]);
+  const missing = await updateNdaIntake(context);
+  assert.equal(missing.status, "needs_input");
+  assert.match(missing.issues!.join(" "), /party identification/);
+  assert.doesNotMatch(missing.issues!.join(" "), /transaction/);
   await configure();
   const check = await updateNdaIntake(context);
   assert.equal(check.status, "needs_input");
@@ -181,8 +262,29 @@ test("NDA facts need exact source quotations and explicit agreement choices", as
   assert.match(validateNdaFacts(config, invented, [party, transaction]).join(" "), /not supported/);
   const missingChoice = structuredClone(facts); missingChoice[2].source = { type: "agreement", userStatement: "Please prepare the NDA." };
   assert.match(validateNdaFacts(config, missingChoice, [party, transaction]).join(" "), /explicit user choice/);
+  const automaticChoice = structuredClone(facts); automaticChoice[2].source = { type: "current_date" };
+  assert.match(validateNdaFacts(config, automaticChoice, [party, transaction]).join(" "), /explicit user choice/);
   const unreadable: WorkflowAttachment = { ...party, pages: [{ ...party.pages[0], readable: false, text: "" }] };
   assert.match(validateNdaFacts(config, facts, [unreadable, transaction]).join(" "), /readable/);
+});
+
+test("NDA defaults to today's Lisbon date, refreshes automatic dates and preserves explicit choices", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-09T22:59:00Z") });
+  const first = await updateNdaIntake(context);
+  assert.deepEqual(first.facts!.find((fact) => fact.key === "agreement_date"), {
+    key: "agreement_date", value: "9 de setembro de 2026", source: { type: "current_date" },
+  });
+  t.mock.timers.setTime(new Date("2026-09-09T23:01:00Z").getTime());
+  const next = await updateNdaIntake(context);
+  assert.equal(next.facts!.find((fact) => fact.key === "agreement_date")!.value, "10 de setembro de 2026");
+  assert.doesNotMatch(next.issues!.join(" "), /Data completa/);
+  const chosen: NdaFact = { key: "agreement_date", value: "15 de setembro de 2026", source: { type: "agreement", userStatement: "Use 15 de setembro de 2026." } };
+  const changed = await updateNdaIntake(context, { facts: [chosen] });
+  assert.deepEqual(changed.facts!.filter((fact) => fact.key === "agreement_date"), [chosen]);
+  assert.deepEqual((await updateNdaIntake(context)).facts!.filter((fact) => fact.key === "agreement_date"), [chosen]);
+  const cmi = await updateNdaIntake(context, {}, "cmi");
+  assert.ok(!cmi.facts!.some((fact) => fact.key === "agreement_date"));
+  assert.match(cmi.issues!.join(" "), /Missing Data acordada/);
 });
 
 test("conflicting NDA facts persist across turns until explicitly resolved", async () => {
@@ -220,7 +322,7 @@ test("an unavailable NDA renderer does not publish a completed draft or generate
   assert.equal((await store.list(context.workspaceId, "nda-draft")).length, 0);
 });
 
-test("exact NDA PDF: Portuguese examples, evidence-backed revision and editable save/reopen", async () => {
+test("exact NDA PDF: party-only evidence, Portuguese examples, revision and editable save/reopen", async () => {
   const loaded = (await loadNdaConfig())!;
   const original = await PDFDocument.load(loaded.template);
   const content = (pdf: PDFDocument, page: number) => {
@@ -231,7 +333,7 @@ test("exact NDA PDF: Portuguese examples, evidence-backed revision and editable 
   assert.equal(original.getPageCount(), 4);
   assert.equal(original.getForm().getFields().length, 0);
   const examples = [
-    { agreement_date: "7 de setembro de 2026", receiving_party: "Exemplo Imóveis, Lda.", receiving_address: "Rua de Teste, 25, 1200-001 Lisboa",
+    { agreement_date: new Date().toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon", day: "numeric", month: "long", year: "numeric" }), receiving_party: "Exemplo Imóveis, Lda.", receiving_address: "Rua de Teste, 25, 1200-001 Lisboa",
       receiving_entity: "Exemplo Imóveis, Lda.", signatory_name: "João Gonçalves", signatory_title: "Sócio-Gerente" },
     { agreement_date: "30 de setembro de 2026", receiving_party: "Sociedade Exemplo de Investimentos Imobiliários e Gestão, Lda.",
       receiving_address: "Avenida de Teste, n.º 123, 4.º Esq., 2750-001 Cascais, Portugal",
@@ -240,14 +342,14 @@ test("exact NDA PDF: Portuguese examples, evidence-backed revision and editable 
   for (const [index, values] of examples.entries()) {
     const ctx = { ...context, conversationId: `pdf-example-${index}` };
     const party = await uploadAttachment(ctx, { fileName: "fictional-party.docx", mimeType: mime, category: "party", bytes: docx(Object.values(values).join("; ")) });
-    await uploadAttachment(ctx, { fileName: "fictional-transaction.docx", mimeType: mime, category: "transaction", bytes: docx("Fictional test only: potential purchase of property TEST123.") });
-    const facts: NdaFact[] = Object.entries(values).map(([key, value]) => ({ key, value, source: key === "agreement_date"
+    const facts: NdaFact[] = Object.entries(values).filter(([key]) => index !== 0 || key !== "agreement_date").map(([key, value]) => ({ key, value, source: key === "agreement_date"
       ? { type: "agreement", userStatement: `Use ${value}.` }
       : { type: "document", attachmentId: party.id, page: 1, quote: party.pages[0].text } }));
     assert.equal((await updateNdaIntake(ctx, { facts })).status, "ready_to_draft");
     process.env.BONTE_LIBREOFFICE_PATH = join(directory, "not-needed-for-exact-pdf");
     const draft = await generateNdaDraft(ctx);
     assert.ok("downloads" in draft);
+    assert.deepEqual(draft.sourceAttachmentIds, [party.id]);
     assert.equal(draft.downloads.length, 1);
     assert.equal(draft.docxAttachmentId, undefined);
     assert.equal(draft.pageCount, 4);
@@ -285,7 +387,7 @@ test("exact NDA PDF: Portuguese examples, evidence-backed revision and editable 
       assert.ok(reopened.getForm().getTextField("signatory_name").acroField.getWidgets()[0].getNormalAppearance());
       if (exportDir) await writeFile(join(exportDir, "nda-test-edited.pdf"), edited);
       const correction: NdaFact = { key: "agreement_date", value: "8 de setembro de 2026", source: { type: "agreement", userStatement: "Change the date to 8 de setembro de 2026." } };
-      assert.equal((await updateNdaIntake(ctx, { facts: [correction] })).status, "needs_input");
+      assert.equal((await updateNdaIntake(ctx, { facts: [correction] })).status, "ready_to_draft");
       assert.equal((await updateNdaIntake(ctx, { facts: [correction], resolveFields: ["agreement_date"] })).status, "ready_to_draft");
       const revision = await generateNdaDraft(ctx);
       assert.ok("downloads" in revision);
@@ -302,7 +404,6 @@ test("exact NDA PDF rejects overflow, unsupported characters and changed source 
   const values = { agreement_date: "7 de setembro de 2026", receiving_party: "Exemplo Imóveis, Lda.", receiving_address: "Rua de Teste, 25, Lisboa",
     receiving_entity: "Exemplo Imóveis, Lda.", signatory_name: "João Gonçalves", signatory_title: "Sócio-Gerente" };
   const party = await uploadAttachment(context, { fileName: "fictional-party.docx", mimeType: mime, category: "party", bytes: docx(Object.values(values).join("; ") + "; " + "W".repeat(80)) });
-  await uploadAttachment(context, { fileName: "fictional-transaction.docx", mimeType: mime, category: "transaction", bytes: docx("Fictional transaction TEST123.") });
   const facts: NdaFact[] = Object.entries(values).map(([key, value]) => ({ key, value: key === "receiving_entity" ? "W".repeat(80) : value, source: key === "agreement_date"
     ? { type: "agreement", userStatement: `Use ${value}.` }
     : { type: "document", attachmentId: party.id, page: 1, quote: party.pages[0].text } }));

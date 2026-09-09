@@ -8,8 +8,8 @@ const originalFetch = globalThis.fetch;
 const originalKey = process.env.RAPIDAPI_KEY;
 afterEach(() => { globalThis.fetch = originalFetch; if (originalKey === undefined) delete process.env.RAPIDAPI_KEY; else process.env.RAPIDAPI_KEY = originalKey; });
 
-// Synthetic Portuguese facts in the published Happy Endpoint OpenAPI example envelopes.
-// The examples document built `size`, `rooms`, priceInfo and the filters echo; these are not live listings.
+// Synthetic Portuguese facts in published and live-observed Happy Endpoint response envelopes.
+// The listing facts are synthetic; the query/listings shape was verified live on 9 Sep 2026.
 const location = { name: "Cascais e Estoril, Cascais", locationId: "0-EU-PT-11-05-01", subTypeText: "Freguesia" };
 const subject = { country: "pt" as const, location: location.name, propertyType: "flat" as const, bedrooms: 2, areaM2: 100, areaBasis: "built" as const, condition: "good" as const };
 const listing = (id: number, price = 350_000, overrides = {}) => ({ propertyCode: String(id), url: `https://www.idealista.pt/imovel/${id}/`, price,
@@ -99,6 +99,24 @@ it("reports insufficient data without a price or automatic widened search", asyn
   assert.equal(result.estimate, null); assert.equal(result.comparables.length, 2); assert.equal(result.coverage.used, 0); assert.equal(calls.length, 2);
 });
 
+it("accepts the live query/listings envelope and explains the two-comparable minimum-sample result", async () => {
+  provider([listing(1, 410_000, { size: 83 }), listing(2, 480_000, { size: 95 })]);
+  const fetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const response = await fetch(url, init);
+    if (new URL(String(url)).pathname === "/auto-complete") return response;
+    const { data: { filters, elementList, ...pagination } } = await response.json();
+    return json({ success: true, data: { ...pagination, query: { country: filters.country, search_type: filters.search_type,
+      property_type: filters.property_type, location_ids: filters.location_ids, flat: "true", minSize: 80, maxSize: 120, bedrooms: 2 }, listings: elementList } });
+  };
+  const result = JSON.parse(String(await runWithWorkflowContext({ workspaceId: "test", actorId: "test", conversationId: "test" }, () => researchPropertyMarketTool.invoke({ subject }))));
+  assert.equal(result.state, "insufficient_data"); assert.equal(result.estimate, null);
+  assert.deepEqual(result.comparables.map((p: { url: string }) => p.url), [listing(2).url, listing(1).url]);
+  assert.equal(result.coverage.totalReported, 2); assert.equal(result.coverage.fetched, 2); assert.equal(result.coverage.eligible, 2);
+  assert.deepEqual(result.coverage.excluded, {}); assert.equal(calls.length, 2);
+  assert.match(result.guidance, /2 verified comparables.*at least 3/i);
+});
+
 it("caps search at two pages, deduplicates repeats and exposes incomplete coverage", async () => {
   provider(Array.from({ length: 50 }, (_, i) => listing(i + 1)), { pages: 100, total: 5000 });
   const result = await researchPropertyMarket({ subject });
@@ -120,10 +138,11 @@ it("resolves an Idealista subject through the fixed details endpoint and exclude
     const u = new URL(String(url));
     if (u.pathname !== "/property-details-by-url") return search(url, init);
     assert.equal(u.hostname, "idealista17.p.rapidapi.com"); assert.match(u.searchParams.get("url")!, /^https:\/\/www\.idealista\.pt\/imovel\/[12]\/$/);
-    return json({ success: true, data: { region: "pt", adId: "1", property: { adid: "1", country: "pt", operation: "sale", extendedPropertyType: "flat", moreCharacteristics: { constructedArea: 100, roomNumber: 2 } } } });
+    return json({ success: true, data: { region: "pt", adId: "1", property: { adid: "1", country: "pt", operation: "sale", extendedPropertyType: "flat", moreCharacteristics: { constructedArea: 100, roomNumber: 2, hasBalcony: true } } } });
   };
   const result = await researchPropertyMarket({ idealistaUrl: listing(1).url, subject: { location: subject.location } });
   assert.equal(result.state, "insufficient_data");
+  assert.equal(result.subject.features.balcony, true);
   if ("estimate" in result) assert.equal(result.coverage.excluded.subject_listing, 1);
   await assert.rejects(researchPropertyMarket({ idealistaUrl: "https://evil.test/imovel/1/", subject }), /valid HTTPS/);
   await assert.rejects(researchPropertyMarket({ idealistaUrl: listing(2).url, subject }), /requested Portuguese/);
@@ -159,7 +178,7 @@ it("handles absent credentials, HTTP/application failures and malformed provider
 });
 
 it("rejects unconfirmed query echoes and repeated/invalid pagination", async () => {
-  for (const invalid of [{ filters: { country: "es" } }, { currentPage: 2 }, { elementList: {} }]) {
+  for (const invalid of [{ filters: { country: "es" } }, { query: { country: "es" } }, { currentPage: 2 }, { elementList: {} }, { listings: {} }]) {
     provider(); const fetch = globalThis.fetch;
     globalThis.fetch = async (url, init) => {
       const response = await fetch(url, init);
@@ -176,4 +195,36 @@ it("requires authenticated workflow context and returns handled tool errors", as
   assert.equal(unauthenticated.state, "error"); assert.equal(calls.length, 0);
   const output = await runWithWorkflowContext({ workspaceId: "test", actorId: "test", conversationId: "test" }, () => researchPropertyMarketTool.invoke({ subject }));
   assert.equal(JSON.parse(String(output)).state, "estimated");
+});
+
+it("accepts the reported balcony tool call and preserves the CRM feature", async () => {
+  process.env.RAPIDAPI_KEY = "test-secret";
+  let requests = 0;
+  globalThis.fetch = async (url, init) => {
+    requests++;
+    if (new URL(String(url)).pathname === "/auto-complete") return json({ success: true, data: { locations: [] } });
+    assert.equal(JSON.parse(String(init?.body)).Reference, "22558");
+    return json({ Success: {}, Count: 1, PropertyList: [{ id: 42, reference: "22558", type: "Apartment", businessType: "Sale", bedrooms: 3,
+      location: { countryCode: "pt", localityName: "Carcavelos Centro" }, features_list_enum: ["Balcony"] }] });
+  };
+  const input = { reference: "22558", subject: { areaBasis: "built" as const, areaM2: 101, bathrooms: 2, bedrooms: 3, condition: "good" as const,
+    country: "pt" as const, features: { balcony: true }, location: "Carcavelos Centro", propertyType: "flat" as const } };
+  const result = JSON.parse(String(await runWithWorkflowContext({ workspaceId: "test", actorId: "test", conversationId: "test" }, () => researchPropertyMarketTool.invoke(input))));
+  assert.equal(result.state, "needs_location"); assert.equal(result.subject.features.balcony, true); assert.equal(requests, 2);
+  const intake = await researchPropertyMarket({ reference: "22558" });
+  assert.equal(intake.subject.features.balcony, true, "CRM balcony evidence survives without a user override");
+});
+
+it("compares balconies separately from terraces, preserving unknowns and mandatory requirements", async () => {
+  const rows = [listing(1, 350_000, { features: { hasBalcony: false } }), listing(2, 350_000, { features: { hasBalcony: true } }),
+    listing(3, 350_000, { features: { hasTerrace: true } }), listing(4, 350_000, { features: { hasBalcony: "true" } })];
+  provider(rows);
+  const result = await researchPropertyMarket({ subject: { ...subject, features: { balcony: true } }, requiredFeatures: { balcony: true } });
+  if (!("comparables" in result)) assert.fail("missing comparables");
+  assert.deepEqual(result.comparables.map(p => p.id), ["2"]); assert.equal(result.state, "insufficient_data");
+  const ranked = assessComparables(rows, { ...subject, features: { balcony: true } }, location);
+  assert.equal(ranked.candidates[0].id, "2");
+  assert.ok(ranked.candidates.find(p => p.id === "1")!.differences.includes("balcony: absent"));
+  assert.ok(ranked.candidates.find(p => p.id === "3")!.differences.includes("balcony: unknown"));
+  assert.deepEqual(assessComparables(rows, subject, location, { balcony: false }).candidates.map(p => p.id), ["1"]);
 });

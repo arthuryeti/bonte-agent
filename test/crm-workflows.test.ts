@@ -43,6 +43,14 @@ describe("CRM verified property workflows", () => {
     assert.equal(pdf.reference, resolved.reference);
   });
 
+  it("normalizes the documented CRM currency code and explicit Portugal country name", () => {
+    const criteria = { currency: "EUR" as const, countryCode: "pt" as const };
+    assert.equal(assessProperty(property({ currency: "€", priceprefixhelper: "EUR" }), criteria).status, "exact");
+    assert.equal(assessProperty(property({ currency: "€" }), criteria).status, "exact");
+    assert.equal(assessProperty(property({ currency: "$", priceprefixhelper: "USD" }), criteria).status, "excluded");
+    assert.equal(assessProperty(property({ currency: "EUR", location: { City: "Lisboa" } }), criteria).status, "unverified");
+  });
+
   it("ranks preferences only after strict requirements and rejects conflicting ranges", () => {
     const results = matchProperties([property(), property({ id: 43, reference: "A-43", features_list_enum: ["Pool"] }), property({ id: 44, type: "Apartment" })], {
       mandatory: { propertyTypes: ["Villa"], features: ["Pool"] }, preferred: { features: ["Garage"] },

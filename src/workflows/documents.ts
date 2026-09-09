@@ -12,7 +12,7 @@ import { z } from "zod";
 import { getWorkflowStore } from "./store.js";
 import { resolveExactProperty } from "./crm-properties.js";
 import {
-  attachmentSummary, deleteAttachment, documentExpiry, documentStorageStatus, DocumentWorkflowError, getAttachment, listAttachments, purgeExpiredAttachments,
+  attachmentCategories, attachmentSummary, deleteAttachment, documentExpiry, documentStorageStatus, DocumentWorkflowError, getAttachment, listAttachments, purgeExpiredAttachments,
   saveGeneratedAttachment, validateDocxArchive, type DocumentContext, type WorkflowAttachment,
 } from "./documents-attachments.js";
 
@@ -30,7 +30,7 @@ export const ndaConfigSchema = z.object({
   reviewNotes: z.array(z.string()).default([]),
   title: z.string().min(1).default("Bonte NDA draft"),
   requiredDocuments: z.array(z.object({ category: z.enum(["party", "transaction"]), label: z.string().min(1), minimum: z.number().int().min(1).max(20).default(1) }))
-    .refine((items) => ["party", "transaction"].every((category) => items.some((item) => item.category === category)), "Both party and transaction documents are mandatory."),
+    .refine((items) => items.some((item) => item.category === "party"), "Party identification documents are mandatory."),
   fields: z.array(z.object({ key: safeKey, label: z.string().min(1), required: z.boolean().default(true), source: z.enum(["party", "transaction", "agreement"]),
     alignment: z.union([z.literal(0), z.literal(1), z.literal(2)]).default(0),
     allowedValues: z.array(z.string().min(1)).optional(), maxLength: z.number().int().positive().max(4000).default(500),
@@ -45,11 +45,13 @@ export const ndaFactSchema = z.object({
   source: z.discriminatedUnion("type", [
     z.object({ type: z.literal("document"), attachmentId: z.string().uuid(), page: z.number().int().positive(), quote: z.string().min(1).max(8000) }),
     z.object({ type: z.literal("agreement"), userStatement: z.string().min(1).max(4000) }),
+    z.object({ type: z.literal("current_date") }),
   ]),
 });
 export type NdaFact = z.infer<typeof ndaFactSchema>;
 interface NdaIntake { conversationId: string; actorId: string; templateVersion: string; templateSha256: string; facts: NdaFact[]; conflicts: string[]; attachmentIds: string[]; expiresAt: string }
 const normalize = (value: string) => value.normalize("NFKC").replace(/\s+/g, " ").trim().toLowerCase();
+const currentNdaDate = () => new Date().toLocaleDateString("pt-PT", { timeZone: "Europe/Lisbon", day: "numeric", month: "long", year: "numeric" });
 
 export async function loadNdaConfig(kind: ContractKind = "nda"): Promise<{ config: NdaConfig; template: Buffer; sha256: string } | null> {
   const configPath = process.env[`BONTE_${kind.toUpperCase()}_CONFIG_PATH`] || fileURLToPath(new URL(`../../templates/${kind}/${kind}.json`, import.meta.url));
@@ -78,11 +80,11 @@ export async function documentCapabilities() {
     runtime: "PDF text/OCR needs Poppler and Tesseract. Bundled PDF contracts are filled directly; DOCX templates need LibreOffice and Poppler for PDF output. Document bytes require S3 (BONTE_S3_BUCKET and BONTE_S3_REGION)." };
 }
 
-export function validateNdaFacts(config: NdaConfig, facts: NdaFact[], attachments: WorkflowAttachment[]): string[] {
+export function validateNdaFacts(config: NdaConfig, facts: NdaFact[], attachments: WorkflowAttachment[], kind: ContractKind = "nda"): string[] {
   const issues: string[] = [];
   const documents = new Map(attachments.map((attachment) => [attachment.id, attachment]));
   for (const requirement of config.requiredDocuments) {
-    const eligible = attachments.filter((attachment) => !attachment.generated && attachment.category === requirement.category && attachment.pages.some((page) => page.readable));
+    const eligible = attachments.filter((attachment) => !attachment.generated && attachmentCategories(attachment).includes(requirement.category) && attachment.pages.some((page) => page.readable));
     if (eligible.length < requirement.minimum) issues.push(`Provide ${requirement.minimum} readable ${requirement.label} document(s); ${eligible.length} available.`);
   }
   for (const field of config.fields) {
@@ -95,6 +97,7 @@ export function validateNdaFacts(config: NdaConfig, facts: NdaFact[], attachment
       if (fact.value.length > field.maxLength) issues.push(`${field.label} exceeds its ${field.maxLength}-character template limit.`);
       if (field.allowedValues && !field.allowedValues.includes(fact.value)) issues.push(`${field.label} must be one of: ${field.allowedValues.join(", ")}.`);
       if (field.source === "agreement") {
+        if (kind === "nda" && field.key === "agreement_date" && fact.source.type === "current_date" && fact.value === currentNdaDate()) continue;
         if (fact.source.type !== "agreement" || !normalize(fact.source.userStatement).includes(normalize(fact.value))) {
           issues.push(`${field.label} requires an explicit user choice containing the supplied value.`);
         }
@@ -103,7 +106,7 @@ export function validateNdaFacts(config: NdaConfig, facts: NdaFact[], attachment
       if (fact.source.type !== "document") { issues.push(`${field.label} must be supported by a ${field.source} document.`); continue; }
       const evidence = documents.get(fact.source.attachmentId);
       const sourcePage = evidence?.pages.find((page) => page.page === (fact.source as { page: number }).page);
-      if (!evidence || evidence.generated || evidence.category !== field.source || !sourcePage?.readable) {
+      if (!evidence || evidence.generated || !attachmentCategories(evidence).includes(field.source) || !sourcePage?.readable) {
         issues.push(`${field.label} has no readable ${field.source} document at its cited location.`);
       } else if (!normalize(sourcePage.text).includes(normalize(fact.source.quote)) || !normalize(fact.source.quote).includes(normalize(fact.value))) {
         issues.push(`${field.label} is not supported by its exact source quotation. Keep the value as written in the document.`);
@@ -151,20 +154,23 @@ async function scopedIntake(context: DocumentContext, kind: ContractKind = "nda"
 }
 export async function updateNdaIntake(context: DocumentContext, input: { facts?: NdaFact[]; attachmentIds?: string[]; resolveFields?: string[] } = {}, kind: ContractKind = "nda") {
   const loaded = await loadNdaConfig(kind);
-  if (!loaded) return { status: "setup_required", message: `Bonte's approved ${kind.toUpperCase()} template and intake must be configured. Supply party and transaction documents.` };
+  if (!loaded) return { status: "setup_required", message: `Bonte's approved ${kind.toUpperCase()} template and intake must be configured.` };
   const prior = await scopedIntake(context, kind);
   const freshTemplate = prior?.templateSha256 !== loaded.sha256 || prior?.templateVersion !== loaded.config.version;
   const current = freshTemplate ? [] : prior?.facts ?? [];
   const incoming = (input.facts ?? []).map((fact) => ndaFactSchema.parse(fact));
   const resolving = new Set(input.resolveFields ?? []);
-  const facts = current.filter((fact) => !resolving.has(fact.key));
+  const facts = current.filter((fact) => !resolving.has(fact.key) && !(kind === "nda" && fact.key === "agreement_date" && fact.source.type === "current_date"));
   for (const fact of incoming) {
     if (!facts.some((existing) => JSON.stringify(existing) === JSON.stringify(fact))) facts.push(fact);
+  }
+  if (kind === "nda" && loaded.config.fields.some((field) => field.key === "agreement_date" && field.source === "agreement") && !facts.some((fact) => fact.key === "agreement_date")) {
+    facts.push({ key: "agreement_date", value: currentNdaDate(), source: { type: "current_date" } });
   }
   const attachments = input.attachmentIds
     ? await Promise.all(input.attachmentIds.map((id) => getAttachment(context, id, true)))
     : (await listAttachments(context)).filter((attachment) => !attachment.generated);
-  const issues = [...validateNdaFacts(loaded.config, facts, attachments), ...(kind === "cmi" ? validateCmiTerms(facts) : [])];
+  const issues = [...validateNdaFacts(loaded.config, facts, attachments, kind), ...(kind === "cmi" ? validateCmiTerms(facts) : [])];
   const intake: NdaIntake = { conversationId: context.conversationId, actorId: context.actorId, templateVersion: loaded.config.version, templateSha256: loaded.sha256,
     facts, conflicts: issues, attachmentIds: attachments.map((attachment) => attachment.id), expiresAt: documentExpiry() };
   await getWorkflowStore().put(context.workspaceId, `${kind}-intake`, context.conversationId, intake);

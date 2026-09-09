@@ -4,6 +4,7 @@
  */
 
 export interface CrmRequest {
+  signal?: AbortSignal;
   endpoint: string;
   method: "GET" | "POST";
   queryParams?: Record<string, string | number | boolean | undefined>;
@@ -280,6 +281,7 @@ function withPagination(
 }
 
 export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
+  request.signal?.throwIfAborted();
   const url = new URL(request.endpoint, getBaseUrl());
   if (url.origin !== new URL(getBaseUrl()).origin) {
     throw new CrmApiError("CRM endpoint must use the configured CRM origin.", undefined, "contract");
@@ -303,7 +305,7 @@ export async function callCrmApi(request: CrmRequest): Promise<CrmResponse> {
   const fetchOptions: RequestInit = {
     method: request.method,
     headers,
-    signal: AbortSignal.timeout(getTimeoutMs()),
+    signal: request.signal ? AbortSignal.any([request.signal, AbortSignal.timeout(getTimeoutMs())]) : AbortSignal.timeout(getTimeoutMs()),
   };
 
   if (request.method === "POST") {

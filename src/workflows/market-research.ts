@@ -1,11 +1,12 @@
 import { z } from "zod";
 import { record, string, number, normalizeText, type CrmRecord } from "./crm-common.js";
 import { resolveExactProperty } from "./crm-properties.js";
+import { idealistaGet, idealistaListingUrl } from "./idealista-client.js";
+export { idealistaListingUrl } from "./idealista-client.js";
 
-// Contract: Happy Endpoint's Idealista OpenAPI, embedded in its RapidAPI playground (8 Sep 2026).
-const HOST = "idealista17.p.rapidapi.com";
+// Contract: Happy Endpoint's Idealista OpenAPI (8 Sep 2026), with live Portugal search verification (9 Sep 2026).
 const types = ["flat", "penthouse", "duplex", "studio", "chalet", "countryHouse"] as const;
-const features = z.object({ pool: z.boolean().optional(), parking: z.boolean().optional(), lift: z.boolean().optional(), terrace: z.boolean().optional(), garden: z.boolean().optional() }).strict();
+const features = z.object({ pool: z.boolean().optional(), parking: z.boolean().optional(), lift: z.boolean().optional(), terrace: z.boolean().optional(), balcony: z.boolean().optional(), garden: z.boolean().optional() }).strict();
 const subjectSchema = z.object({
   country: z.literal("pt").optional(),
   location: z.string().trim().min(1).max(100).optional().describe("Smallest known locality/neighbourhood, including municipality. Never silently broaden it."),
@@ -35,46 +36,7 @@ export function marketResearchStatus() {
   return { provider: "Idealista via Happy Endpoint / RapidAPI", configured: Boolean(process.env.RAPIDAPI_KEY?.trim()),
     scope: "Portugal residential sale asking prices in EUR", connection: "not_checked_by_status",
     missing: process.env.RAPIDAPI_KEY?.trim() ? [] : ["RAPIDAPI_KEY and an active Happy Endpoint Idealista subscription"],
-    next: "Use research_property_market; configuration alone does not prove provider connectivity." };
-}
-
-export function idealistaListingUrl(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  try {
-    const url = new URL(value);
-    if (url.protocol !== "https:" || !["idealista.pt", "www.idealista.pt"].includes(url.hostname) || url.port || url.username || url.password
-      || !/^\/(?:[a-z]{2}\/)?imovel\/[1-9]\d*\/?$/.test(url.pathname)) return undefined;
-    url.hostname = "www.idealista.pt";
-    url.pathname = url.pathname.replace(/^\/[a-z]{2}\//, "/").replace(/\/?$/, "/");
-    url.search = ""; url.hash = "";
-    return url.href;
-  } catch { return undefined; }
-}
-
-async function idealistaGet(path: "/auto-complete" | "/property-search" | "/property-details-by-url", params: Record<string, string | number>, signal?: AbortSignal): Promise<CrmRecord> {
-  const key = process.env.RAPIDAPI_KEY?.trim();
-  if (!key) throw new Error("Market research is not configured. Set RAPIDAPI_KEY on the gateway and subscribe to Happy Endpoint's Idealista API.");
-  const url = new URL(`https://${HOST}${path}`);
-  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, String(value));
-  const timeout = AbortSignal.timeout(20_000);
-  let response: Response;
-  try {
-    response = await fetch(url, { headers: { "X-RapidAPI-Key": key, "X-RapidAPI-Host": HOST, Accept: "application/json" },
-      redirect: "error", signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
-  } catch {
-    throw new Error(signal?.aborted ? "Market research was cancelled." : "Idealista request failed or timed out. Try again later.");
-  }
-  if (!response.ok) {
-    const message = response.status === 401 || response.status === 403 ? "Check RAPIDAPI_KEY and the Happy Endpoint Idealista subscription."
-      : response.status === 429 ? "RapidAPI quota or rate limit reached. Try again after the limit resets."
-      : response.status === 404 || response.status === 410 ? "The listing or location is unavailable."
-      : "The Idealista provider could not complete this request. Try again later.";
-    throw new Error(`Idealista request failed (${response.status}). ${message}`);
-  }
-  let body: CrmRecord;
-  try { body = record(await response.json()); } catch { throw new Error("Idealista returned malformed JSON."); }
-  if (body.success !== true || !body.data || typeof body.data !== "object" || Array.isArray(body.data)) throw new Error("Idealista returned an unsuccessful or invalid response.");
-  return record(body.data);
+    next: "Use research_property_market for estimates or match_saved_buyer for buyer matching; configuration alone does not prove provider connectivity." };
 }
 
 function conditionOf(row: CrmRecord): Subject["condition"] {
@@ -85,7 +47,7 @@ function listingFeatures(row: CrmRecord): z.infer<typeof features> {
   const source = record(row.features);
   const bool = (v: unknown) => typeof v === "boolean" ? v : undefined;
   return { lift: bool(row.hasLift), parking: bool(record(row.parkingSpace).hasParkingSpace),
-    pool: bool(source.hasSwimmingPool), terrace: bool(source.hasTerrace), garden: bool(source.hasGarden) };
+    pool: bool(source.hasSwimmingPool), terrace: bool(source.hasTerrace), balcony: bool(source.hasBalcony) ?? bool(record(row.moreCharacteristics).hasBalcony), garden: bool(source.hasGarden) };
 }
 
 async function resolveSubject(input: z.infer<typeof marketResearchSchema>, signal?: AbortSignal) {
@@ -105,7 +67,7 @@ async function resolveSubject(input: z.infer<typeof marketResearchSchema>, signa
     facts = { country: "pt", propertyType: mapping[String(p.type)], bedrooms: number(p.bedrooms), bathrooms: number(p.bathrooms),
       location: [string(location.localityName ?? location.Locality), string(location.cityName ?? location.City)].filter(Boolean).join(", ") || undefined,
       plotAreaM2: number(p.plot_area) || undefined, condition: condition[String(p.condition_type)],
-      features: { pool: present("Pool"), parking: present("Garage"), lift: present("Lift"), terrace: present("Terrace"), garden: present("Garden") } };
+      features: { pool: present("Pool"), parking: present("Garage"), lift: present("Lift"), terrace: present("Terrace"), balcony: present("Balcony"), garden: present("Garden") } };
     source = { kind: "crm", reference: verified.reference, propertyId: verified.propertyId, fetchedAt: verified.sourceTime,
       areaEvidence: { livingArea: p.living_area, totalArea: p.total_area, note: "Confirm built area; CRM total_area is not automatically treated as built area." } };
     selfUrl = idealistaListingUrl(verified.listingUrl);
@@ -225,9 +187,10 @@ export async function researchPropertyMarket(raw: MarketResearchInput, signal?: 
   // ponytail: two pages give a bounded sample; increase coverage only when explicitly requested and costed.
   for (let page = 1; page <= 2; page++) {
     const response = await idealistaGet("/property-search", { ...params, page }, signal);
-    const filters = record(response.filters);
+    // Live searches use query/listings; the published examples used filters/elementList.
+    const filters = record(response.query ?? response.filters);
     if (filters.country !== "pt" || filters.search_type !== "for_sale" || filters.property_type !== "homes" || filters.location_ids !== location.locationId) throw new Error("Idealista search did not confirm the requested country, operation, property class and locality.");
-    const pagination = z.object({ elementList: z.array(z.unknown()).max(50), total: z.number().int().nonnegative(), totalPages: z.number().int().nonnegative(), currentPage: z.number().int().optional(), actualPage: z.number().int().optional() }).safeParse(response);
+    const pagination = z.object({ elementList: z.array(z.unknown()).max(50), total: z.number().int().nonnegative(), totalPages: z.number().int().nonnegative(), currentPage: z.number().int().optional(), actualPage: z.number().int().optional() }).safeParse({ ...response, elementList: response.listings ?? response.elementList });
     if (!pagination.success || (pagination.data.currentPage ?? pagination.data.actualPage) !== page) throw new Error("Idealista search returned invalid pagination or listing data.");
     total = pagination.data.total; totalPages = pagination.data.totalPages; pagesFetched++;
     rows.push(...pagination.data.elementList);
@@ -245,5 +208,5 @@ export async function researchPropertyMarket(raw: MarketResearchInput, signal?: 
       ...(estimate?.thinSample ? ["Thin sample: only three or four comparables."] : []), ...(estimate?.wideDispersion ? ["Comparable prices have wide dispersion."] : []),
       ...(estimate && estimate.low === estimate.high ? ["Identical rounded endpoints do not establish certainty."] : [])],
     guidance: estimate ? "Show the central estimate and range, sample count, date and 3–5 returned links with price, built m², €/m², bedrooms, locality and differences. Preserve the computed values."
-      : "Too few verified comparables for an estimate. Show available links; suggest an explicitly agreed broader locality or corrected subject facts, without automatically repeating the search." };
+      : `Search completed with ${rows.length} listings and ${candidates.length} verified comparables; at least 3 are required for a price estimate. Show available links and explain the sample shortfall; suggest an explicitly agreed broader locality or corrected subject facts, without automatically repeating the search.` };
 }

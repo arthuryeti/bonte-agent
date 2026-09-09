@@ -5,12 +5,11 @@
   "format": "pdf",
   "title": "Acordo de Confidencialidade - Bonte & Filipidis",
   "reviewNotes": [
-    "The source filename says 2026 but its date line prints 2025. Supply the user's full Portuguese date including the year; the editable date field covers the original date area.",
+    "The source filename says 2026 but its date line prints 2025. The agreement date defaults to today in Europe/Lisbon, written in full Portuguese including the year, unless the user explicitly chooses another date. The editable date field covers the original date area.",
     "Clauses, branding, pagination and signature lines are preserved. The source footer says AMI 1384 while the body says 13824; this source discrepancy has not been changed."
   ],
   "requiredDocuments": [
-    { "category": "party", "label": "party identification and signatory authority", "minimum": 1 },
-    { "category": "transaction", "label": "transaction details", "minimum": 1 }
+    { "category": "party", "label": "party identification and signatory authority", "minimum": 1 }
   ],
   "fields": [
     { "key": "agreement_date", "label": "Data completa do acordo (dia de mês de ano)", "source": "agreement", "maxLength": 32,

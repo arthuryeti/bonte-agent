@@ -173,7 +173,7 @@ Existing user instructions and permissions should carry through the workflow. Do
 | 1. Reliable CRM data and answers | Typed services, exact property resolution, full-data lead analysis, truthful coverage, property filters and error handling. | Original search and audit examples pass against controlled records; no invented identity, full-dataset totals from a preview, or status-to-contact assumptions. |
 | 2. Lead operations | Durable follow-up tasks/monitoring, contact lookup within known scope, validated registration, stored buyer criteria, initial outcome-based sales reporting. | Duplicate/uncertain writes handled, jobs survive restarts, and date/attribution exceptions are visible. Registration and authoritative sales reporting remain gated by their concrete data dependencies. |
 | 3. Matching and shareable materials | Ranked buyer matching, website link mapping, consistent brochures, editable email drafts. | Verified shortlist → correct links/photos → matching PDF/email, including conversational edits. |
-| 4. NDA intake and documents | Uploads, text extraction/OCR, party/transaction-document checklist, Bonte template population, DOCX/PDF output and attachment access controls. | Bonte's template and required source fields are configured; complete inputs produce rendered, usable drafts. |
+| 4. NDA intake and documents | Uploads, text extraction/OCR, template-specific supporting-document checklist, Bonte template population, DOCX/PDF output and attachment access controls. | Bonte's template and required source fields are configured; complete inputs produce rendered, usable drafts. |
 | 5. Calendar completion and additional data sources | Team Google Calendar booking, updates/cancellation and requested invitations; external inventory and general contact lookup if their APIs/exports are supplied. | Actual provider confirmations and event IDs; unsupported external sources remain explicitly pending rather than simulated. |
 
 ## Validation approach
@@ -186,7 +186,7 @@ Run unit/integration checks for the services and state transitions, mocked provi
 
 ## Confirmed choices and remaining inputs
 
-Confirmed: use Bonte's existing NDA template and require supporting party/transaction documents; save viewings in the team's Google Calendar.
+Confirmed: use Bonte's existing NDA template with party identification/signatory authority evidence extracted from uploaded documents. Default the NDA date to today in Europe/Lisbon unless the user explicitly chooses another date; no transaction document is required for this NDA. CMI retains its property document and explicit date requirements. Save viewings in the team's Google Calendar.
 
 1. Bonte's template and representative supporting documents, so required identity/transaction fields and accepted document types can be configured. The intended workflow is settled; these are implementation inputs.
 2. The target Google Calendar IDs, authorized account access and invitation sender; any separate email-sending workflow will also need its sender configured.

@@ -219,7 +219,7 @@ export async function GET(request: Request) {
         })),
     });
   } catch {
-    return Response.json({ messages: [] });
+    return Response.json({ error: "Conversation history is temporarily unavailable." }, { status: 503 });
   } finally {
     gateway.close();
   }
